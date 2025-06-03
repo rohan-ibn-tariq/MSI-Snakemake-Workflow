@@ -28,5 +28,6 @@ jobs:
     - name: Activate env and run Snakemake
       shell: bash -el {0}
       run: |
+        eval "$(micromamba shell hook --shell=bash)"
         micromamba activate snakemake-msi-env
         snakemake --cores 2 --rerun-incomplete
