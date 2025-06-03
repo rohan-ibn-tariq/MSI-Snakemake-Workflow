@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+*.log
+
+# Snakemake
+.snakemake/
+*.snakemake.log
+*.snakemake.timestamp
+
+# Conda / Micromamba
+.env/
+*.conda
+*.lock
+micromamba-root/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VSCode / IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# GitHub Actions secrets or runners
+/secrets/
+.github/workflows/*.local.yml
