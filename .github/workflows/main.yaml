@@ -1,0 +1,30 @@
+name: Snakemake Workflow CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  snakemake:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install micromamba
+      run: |
+        curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C $HOME --strip-components=1 bin/micromamba
+        export PATH="$HOME:$PATH"
+        micromamba --version
+
+    - name: Create environment
+      run: micromamba create -n snakemake-msi-env -f environment/environment.yaml -y
+
+    - name: Activate env and run Snakemake
+      shell: bash -el {0}
+      run: |
+        micromamba activate snakemake-msi-environment
+        snakemake --cores 2 --rerun-incomplete
