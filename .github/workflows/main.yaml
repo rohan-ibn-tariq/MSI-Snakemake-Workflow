@@ -18,7 +18,9 @@ jobs:
       run: |
         curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C $HOME --strip-components=1 bin/micromamba
         echo "$HOME" >> $GITHUB_PATH
-        micromamba --version
+    
+    - name: Verify micromamba installation
+      run: micromamba --version
 
     - name: Create environment
       run: micromamba create -n snakemake-msi-env -f environment/environment.yaml -y
