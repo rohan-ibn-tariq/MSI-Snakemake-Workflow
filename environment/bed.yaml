@@ -1,0 +1,8 @@
+name: bed
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.12
+  - interval-binning
+
