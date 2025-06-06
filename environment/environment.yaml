@@ -9,4 +9,6 @@ dependencies:
   - python=3.12
   - snakemake
   - curl
-  
+  - interval-binning
+  - mason
+  - trf
