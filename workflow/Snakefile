@@ -1,0 +1,119 @@
+rule all:
+    input:
+        [
+            "workflow/resources/genome.fasta",
+            "results/simulated-mason-variant/genome_sim.vcf",
+            "genome.fasta.2.7.7.80.10.50.500.dat",
+            "results/msi-bed/genome.bed",
+        ],
+
+
+#TODO: shift to 4.10-rc-2  or accept non zero status codes.
+# expand("results/{sample}", sample=["small_test"]),
+
+
+rule get_genome:
+    output:
+        "workflow/resources/genome.fasta",
+    conda:
+        "envs/get_genome.yaml"
+    params:
+        species="homo_sapiens",
+        datatype="dna",
+        build="GRCh38",
+        release="112",
+        chromosome=["22"],
+    log:
+        "workflow/logs/get_genome.log",
+    wrapper:
+        "v6.2.0/bio/reference/ensembl-sequence"
+
+
+rule simulate_variants_mason:
+    input:
+        ref="workflow/resources/genome.fasta",
+    output:
+        vcf="results/simulated-mason-variant/genome_sim.vcf",
+    params:
+        seed=50,
+        num_variants=1000,
+    log:
+        "workflow/logs/simulate_variants.log",
+    shell:
+        """
+        mason_variator \
+            -ir {input.ref} \
+            -ov {output.vcf} \
+            --seed {params.seed} \
+            -n {params.num_variants} \
+            --small-indel-rate 0.001 \
+            > {log} 2>&1
+        """
+
+
+# rule run_trf_on_reference:
+#     input:
+#         sample="workflow/resources/{sample}.fasta",
+#     output:
+#         directory("results/{sample}"),
+#     params:
+#         match=2,
+#         mismatch=7,
+#         delta=7,
+#         pm=80,
+#         pi=10,
+#         minscore=50,
+#         maxperiod=500,
+#         extra="-h",
+#     log:
+#         "workflow/logs/trf/{sample}.log",
+#     wrapper:
+#         "v7.0.0/bio/trf"
+
+
+rule run_trf_on_reference:
+    input:
+        ref="workflow/resources/genome.fasta",
+    output:
+        dat="genome.fasta.2.7.7.80.10.50.500.dat",
+    params:
+        match=2,
+        mismatch=7,
+        delta=7,
+        pm=80,
+        pi=10,
+        minscore=50,
+        maxperiod=500,
+        extra="-h",
+    log:
+        "workflow/logs/trf/trf.log",
+    shell:
+        """
+        set -euo pipefail
+        ( trf \
+            {input.ref} \
+            {params.match} \
+            {params.mismatch} \
+            {params.delta} \
+            {params.pm} \
+            {params.pi} \
+            {params.minscore} \
+            {params.maxperiod} \
+            {params.extra} \
+        || [ $? -eq 1 ] ) > {log} 2>&1
+        """
+
+
+rule dat_to_bed:
+    input:
+        dat="genome.fasta.2.7.7.80.10.50.500.dat",
+    output:
+        bed="results/msi-bed/genome.bed",
+    log:
+        "workflow/logs/msi.log",
+    params:
+        script="workflow/scripts/dat2bed_ucsc.py",
+    shell:
+        "python {params.script} --dat {input.dat} --bed {output.bed} > {log} 2>&1"
+
+
