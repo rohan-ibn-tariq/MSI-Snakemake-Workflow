@@ -31,3 +31,8 @@ Thumbs.db
 # GitHub Actions secrets or runners
 /secrets/
 .github/workflows/*.local.yml
+
+# Workflow specific
+/workflow/log/
+/workflow/resources/
+/results/

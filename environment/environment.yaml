@@ -7,8 +7,15 @@ channels:
 
 dependencies:
   - python=3.12
+  - black
+  - isort
+  - pylint
   - snakemake
-  - curl
-  - interval-binning
+  - snakefmt
   - mason
+  # - curl
+  - interval-binning
   - trf
+  - pysam
+  - samtools
+  - bcftools
