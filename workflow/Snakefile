@@ -5,11 +5,13 @@ rule all:
             "results/simulated-mason-variant/genome_sim.vcf",
             "genome.fasta.2.7.7.80.10.50.500.dat",
             "results/msi-bed/genome.bed",
+            "results/simulated-bam/alignments.bam"
         ],
 
 
 #TODO: shift to 4.10-rc-2  or accept non zero status codes.
 # expand("results/{sample}", sample=["small_test"]),
+#"results/simulated-bam/alignments.bam"
 
 
 rule get_genome:
@@ -28,6 +30,26 @@ rule get_genome:
     wrapper:
         "v6.2.0/bio/reference/ensembl-sequence"
 
+
+###TODO: STILL TO TEST########
+rule preprocess_mason_vcf:
+    input:
+        vcf="results/simulated-mason-variant/genome_sim.vcf",
+    output:
+        vcf="results/simulated-mason-variant/genome_sim_pp.vcf",
+    log:
+        "workflow/logs/preprocess_mason_vcf.log",
+    shell:
+        """
+        # Add GT format header and fix format column
+        (
+            grep '^##' {input.vcf}
+            echo '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">'
+            grep '^#CHROM' {input.vcf}
+            grep -v '^#' {input.vcf} | sed 's/\t\.\t/\tGT\t/g'
+        ) > {output.vcf} 2> {log}
+        """
+####TODO: STILL TO TEST####
 
 rule simulate_variants_mason:
     input:
@@ -116,4 +138,44 @@ rule dat_to_bed:
     shell:
         "python {params.script} --dat {input.dat} --bed {output.bed} > {log} 2>&1"
 
+
+rule simulate_reads_mason:
+    input:
+        fasta="workflow/resources/genome.fasta",
+        vcf="results/msi-indels-vcf/gn.vcf"
+        #vcf="results/test/test.vcf"
+    output:
+        fastq_left="results/simulated-left-fastq/left_reads.fq",
+        fastq_right="results/simulated-right-fastq/right_reads.fq",
+        bam="results/simulated-bam/alignments.bam",
+    params:
+        num_fragments=100000,
+        read_length=150,
+        fragment_mean_size=350,
+        fragment_size_stddev=50,
+        seed=50,
+        illumina_read_length=150,
+        chunk_size=65536
+    threads: 4
+    log:
+        "workflow/logs/mason_simulation.log"
+    shell:
+        """
+        mason_simulator \
+            -ir {input.fasta} \
+            -iv {input.vcf} \
+            -n {params.num_fragments} \
+            --illumina-read-length {params.read_length} \
+            --fragment-mean-size {params.fragment_mean_size} \
+            --fragment-size-std-dev {params.fragment_size_stddev} \
+            --seed {params.seed} \
+            --num-threads {threads} \
+            -o {output.fastq_left} \
+            -or {output.fastq_right} \
+            -oa {output.bam} \
+            > {log} 2>&1
+
+        samtools sort -@ {threads} -o {output.bam} {output.bam} >> {log} 2>&1
+        samtools index {output.bam} >> {log} 2>&1
+        """
 

@@ -42,7 +42,7 @@ def parse_args():
         help="Reference genome FASTA file (Index Should be Present)",
     )
     parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for reproducibility"
+        "--seed", type=int, default=50, help="Random seed for reproducibility"
     )
     parser.add_argument(
         "--ins-rate", type=float, default=0.15, help="MSI indel's insertion rate"
@@ -236,6 +236,43 @@ def inject_indels(
     # Phase 1: Write all existing variants and track their positions/ranges
     for rec in vcf:
         total += 1
+
+        ######TODO: REMOVE ############################################
+        # DEBUG: Print sample info for first record
+        if total == 1:
+            print(f"[DEBUG] First record format: {list(rec.format)}")
+            print(f"[DEBUG] Sample names: {list(rec.samples.keys())}")
+            for sample_name in rec.samples:
+                sample_obj = rec.samples[sample_name]
+                print(f"[DEBUG] Sample '{sample_name}' object: {sample_obj}")
+        
+            print(f"[DEBUG] Full record string: {str(rec)}")
+        
+            try:
+                print(f"[DEBUG] Sample values: {sample_obj.values()}")
+            except:
+                pass
+            
+            try:
+                print(f"[DEBUG] Sample items: {list(sample_obj.items())}")
+            except:
+                pass
+            
+            try:
+                print(f"[DEBUG] Sample keys: {list(sample_obj.keys())}")
+            except:
+                pass
+            
+            try:
+                print(f"[DEBUG] Sample phased: {sample_obj.phased}")
+            except:
+                pass
+            
+            try:
+                print(f"[DEBUG] Sample alleles: {sample_obj.alleles}")
+            except:
+                pass
+        ########################TODO:DEBUG REMOVE ABOVE##################################
 
         out.write(rec)
 
