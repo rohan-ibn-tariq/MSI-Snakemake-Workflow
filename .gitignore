@@ -36,3 +36,6 @@ Thumbs.db
 /workflow/log/
 /workflow/resources/
 /results/
+
+#temp files
+genome.fasta.2.7.7.80.10.50.500.dat
