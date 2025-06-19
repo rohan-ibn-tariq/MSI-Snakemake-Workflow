@@ -6,3 +6,4 @@ channels:
 dependencies:
   - interval-binning
   - pysam
+  - bcftools
