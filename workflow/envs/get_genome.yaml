@@ -1,3 +1,4 @@
+name: data-fetching-env
 channels:
   - conda-forge
 dependencies:

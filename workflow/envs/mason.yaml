@@ -1,0 +1,7 @@
+name: mason-env
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - mason
