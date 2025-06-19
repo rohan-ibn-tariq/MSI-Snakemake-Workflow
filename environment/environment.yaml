@@ -12,10 +12,10 @@ dependencies:
   - pylint
   - snakemake
   - snakefmt
-  - mason
+  # - mason
+  - varlociraptor
   # - curl
-  - interval-binning
-  - trf
-  - pysam
+  # - interval-binning
+  # - pysam
   - samtools
-  - bcftools
+  # - bcftools
