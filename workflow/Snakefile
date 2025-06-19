@@ -1,181 +1,43 @@
+"""
+MSI Variant Detection and Analysis Workflow
+==========================================
+
+A comprehensive pipeline for simulating and detecting microsatellite instability (MSI) 
+variants in human chromosome 22 using state-of-the-art bioinformatics tools.
+
+Workflow Overview:
+- Genome acquisition from Ensembl
+- Tandem repeat discovery with PyTRF  
+- Variant simulation using Mason toolkit
+- MSI-targeted indel injection
+- Probabilistic variant calling with VarLociraptor
+- Statistical quantification and analysis
+
+Tools: Mason, PyTRF, VarLociraptor, BCFtools
+Reference: Human genome GRCh38, Chromosome 22
+Output: MSI burden quantification and visualization
+"""
+
+
+include: "rules/data_preparation.smk"
+include: "rules/simulation_processing.smk"
+include: "rules/data_analysis.smk"
+
+
 rule all:
     input:
-        [
-            "workflow/resources/genome.fasta",
-            "results/simulated-mason-variant/genome_sim.vcf",
-            "genome.fasta.2.7.7.80.10.50.500.dat",
-            "results/msi-bed/genome.bed",
-            "results/simulated-bam/alignments.bam"
-        ],
-
-
-#TODO: shift to 4.10-rc-2  or accept non zero status codes.
-# expand("results/{sample}", sample=["small_test"]),
-#"results/simulated-bam/alignments.bam"
-
-
-rule get_genome:
-    output:
+        # Data preparation outputs
         "workflow/resources/genome.fasta",
-    conda:
-        "envs/get_genome.yaml"
-    params:
-        species="homo_sapiens",
-        datatype="dna",
-        build="GRCh38",
-        release="112",
-        chromosome=["22"],
-    log:
-        "workflow/logs/get_genome.log",
-    wrapper:
-        "v6.2.0/bio/reference/ensembl-sequence"
-
-
-###TODO: STILL TO TEST########
-rule preprocess_mason_vcf:
-    input:
-        vcf="results/simulated-mason-variant/genome_sim.vcf",
-    output:
-        vcf="results/simulated-mason-variant/genome_sim_pp.vcf",
-    log:
-        "workflow/logs/preprocess_mason_vcf.log",
-    shell:
-        """
-        # Add GT format header and fix format column
-        (
-            grep '^##' {input.vcf}
-            echo '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">'
-            grep '^#CHROM' {input.vcf}
-            grep -v '^#' {input.vcf} | sed 's/\t\.\t/\tGT\t/g'
-        ) > {output.vcf} 2> {log}
-        """
-####TODO: STILL TO TEST####
-
-rule simulate_variants_mason:
-    input:
-        ref="workflow/resources/genome.fasta",
-    output:
-        vcf="results/simulated-mason-variant/genome_sim.vcf",
-    params:
-        seed=50,
-        num_variants=1000,
-    log:
-        "workflow/logs/simulate_variants.log",
-    shell:
-        """
-        mason_variator \
-            -ir {input.ref} \
-            -ov {output.vcf} \
-            --seed {params.seed} \
-            -n {params.num_variants} \
-            --small-indel-rate 0.001 \
-            > {log} 2>&1
-        """
-
-
-# rule run_trf_on_reference:
-#     input:
-#         sample="workflow/resources/{sample}.fasta",
-#     output:
-#         directory("results/{sample}"),
-#     params:
-#         match=2,
-#         mismatch=7,
-#         delta=7,
-#         pm=80,
-#         pi=10,
-#         minscore=50,
-#         maxperiod=500,
-#         extra="-h",
-#     log:
-#         "workflow/logs/trf/{sample}.log",
-#     wrapper:
-#         "v7.0.0/bio/trf"
-
-
-rule run_trf_on_reference:
-    input:
-        ref="workflow/resources/genome.fasta",
-    output:
-        dat="genome.fasta.2.7.7.80.10.50.500.dat",
-    params:
-        match=2,
-        mismatch=7,
-        delta=7,
-        pm=80,
-        pi=10,
-        minscore=50,
-        maxperiod=500,
-        extra="-h",
-    log:
-        "workflow/logs/trf/trf.log",
-    shell:
-        """
-        set -euo pipefail
-        ( trf \
-            {input.ref} \
-            {params.match} \
-            {params.mismatch} \
-            {params.delta} \
-            {params.pm} \
-            {params.pi} \
-            {params.minscore} \
-            {params.maxperiod} \
-            {params.extra} \
-        || [ $? -eq 1 ] ) > {log} 2>&1
-        """
-
-
-rule dat_to_bed:
-    input:
-        dat="genome.fasta.2.7.7.80.10.50.500.dat",
-    output:
-        bed="results/msi-bed/genome.bed",
-    log:
-        "workflow/logs/msi.log",
-    params:
-        script="workflow/scripts/dat2bed_ucsc.py",
-    shell:
-        "python {params.script} --dat {input.dat} --bed {output.bed} > {log} 2>&1"
-
-
-rule simulate_reads_mason:
-    input:
-        fasta="workflow/resources/genome.fasta",
-        vcf="results/msi-indels-vcf/gn.vcf"
-        #vcf="results/test/test.vcf"
-    output:
-        fastq_left="results/simulated-left-fastq/left_reads.fq",
-        fastq_right="results/simulated-right-fastq/right_reads.fq",
-        bam="results/simulated-bam/alignments.bam",
-    params:
-        num_fragments=100000,
-        read_length=150,
-        fragment_mean_size=350,
-        fragment_size_stddev=50,
-        seed=50,
-        illumina_read_length=150,
-        chunk_size=65536
-    threads: 4
-    log:
-        "workflow/logs/mason_simulation.log"
-    shell:
-        """
-        mason_simulator \
-            -ir {input.fasta} \
-            -iv {input.vcf} \
-            -n {params.num_fragments} \
-            --illumina-read-length {params.read_length} \
-            --fragment-mean-size {params.fragment_mean_size} \
-            --fragment-size-std-dev {params.fragment_size_stddev} \
-            --seed {params.seed} \
-            --num-threads {threads} \
-            -o {output.fastq_left} \
-            -or {output.fastq_right} \
-            -oa {output.bam} \
-            > {log} 2>&1
-
-        samtools sort -@ {threads} -o {output.bam} {output.bam} >> {log} 2>&1
-        samtools index {output.bam} >> {log} 2>&1
-        """
-
+        "results/msi-bed/genome.bed",
+        "results/msi-bed/sample_test.bed",
+        "results/repeats/pytrf_output.csv",
+        # Simulation processing outputs
+        "results/simulated-mason-variant/genome_sim_raw.vcf",
+        "results/simulated-mason-variant/genome_sim.vcf",
+        "results/msi-indels-vcf/genome_sim_indels.vcf",
+        "results/msi-indels-vcf/genome_filtered.vcf",
+        "results/simulated-bam/alignments.bam",
+        "results/varlociraptor-calls/variants.bcf",
+        # Analysis results outputs
+        "results/varlociraptor-calls/variants.vcf",
+        "results/msi-quantification/msi_variants_detailed.tsv",
