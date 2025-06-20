@@ -51,18 +51,11 @@ def get_repeat_info(row):
     pytrf CSV format: [chrom, start, end, motif, motif_length, repeat_number, repeat_length]
     """
     try:
-        if isinstance(row, dict):
-            chrom = str(row.get('chrom') or row.get('chromosome') or row.get('seq_name', ''))
-            start = int(row.get('start') or row.get('start_pos', 0)) - 1
-            end = int(row.get('end') or row.get('end_pos', 0))
-            motif = str(row.get('motif') or row.get('motif_seq', ''))
-            copies = int(float(row.get('repeat_number') or row.get('copies', 0)))
-        else:
-            chrom = str(row[0])
-            start = int(row[1]) - 1 
-            end = int(row[2])
-            motif = str(row[3])
-            copies = int(float(row[5]))
+        chrom = str(row[0])
+        start = int(row[1]) - 1 
+        end = int(row[2])
+        motif = str(row[3])
+        copies = int(float(row[5]))
         
         if not chrom.startswith("chr"):
             chrom = f"chr{chrom}"
@@ -90,21 +83,8 @@ def main():
     
     try:
         with open(args.csv, 'r', encoding="utf-8") as csvfile:
-            sample = csvfile.read(1024)
-            csvfile.seek(0)
-            
-            first_line = csvfile.readline().strip()
-            csvfile.seek(0)
-            
-            has_headers = not first_line.split(',')[0].replace('.', '').replace('-', '').isdigit()
-            
-            if has_headers:
-                dialect = csv.Sniffer().sniff(sample)
-                reader = csv.DictReader(csvfile, delimiter=dialect.delimiter)
-            else:
-                dialect = csv.Sniffer().sniff(sample)
-                reader = csv.reader(csvfile, delimiter=dialect.delimiter)
-            
+            reader = csv.reader(csvfile)
+
             for row in reader:
                 info = get_repeat_info(row)
                 if info:
