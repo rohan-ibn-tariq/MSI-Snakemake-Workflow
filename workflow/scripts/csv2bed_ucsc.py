@@ -14,9 +14,9 @@ chromEnd	50513	    int(10) unsigned	        range	    End position in chromosome
 name	    16xGT	    varchar(255)	            values	    Name of item
 """
 
+import csv
 import os
 import sys
-import csv
 from argparse import ArgumentParser
 
 from binning import assign_bin
@@ -52,14 +52,14 @@ def get_repeat_info(row):
     """
     try:
         chrom = str(row[0])
-        start = int(row[1]) - 1 
+        start = int(row[1]) - 1
         end = int(row[2])
         motif = str(row[3])
         copies = int(float(row[5]))
-        
+
         if not chrom.startswith("chr"):
             chrom = f"chr{chrom}"
-        
+
         name = f"{copies}x{motif}"
         return chrom, start, end, name
     except (KeyError, ValueError, TypeError, IndexError):
@@ -80,9 +80,9 @@ def main():
         sys.exit(1)
 
     print("[csv2bed INFO] Starting Processing.")
-    
+
     try:
-        with open(args.csv, 'r', encoding="utf-8") as csvfile:
+        with open(args.csv, "r", encoding="utf-8") as csvfile:
             reader = csv.reader(csvfile)
 
             for row in reader:
@@ -91,8 +91,8 @@ def main():
                     chrom, start, end, name = info
                     bin_id = assign_bin(start, end)
                     records.append((bin_id, chrom, start, end, name))
-                    
-    except Exception as e:
+
+    except (OSError, csv.Error) as e:
         print(f"[csv2bed ERROR] Failed to parse CSV: {e}", file=sys.stderr)
         sys.exit(1)
 
