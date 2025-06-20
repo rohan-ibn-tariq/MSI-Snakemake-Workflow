@@ -13,9 +13,9 @@ dependencies:
   - snakemake
   - snakefmt
   # - mason
-  - varlociraptor
+  # - varlociraptor
   # - curl
   # - interval-binning
   # - pysam
-  - samtools
+  # - samtools
   # - bcftools
