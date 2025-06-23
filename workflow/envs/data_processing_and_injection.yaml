@@ -6,5 +6,6 @@ channels:
 dependencies:
   - interval-binning
   - pandas
+  - altair
   - pysam
   - bcftools
