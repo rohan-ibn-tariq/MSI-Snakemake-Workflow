@@ -13,6 +13,7 @@ import altair as alt
 import pandas as pd
 import pysam
 
+alt.data_transformers.disable_max_rows()
 
 def load_ground_truth_variants(vcf_file):
     """
