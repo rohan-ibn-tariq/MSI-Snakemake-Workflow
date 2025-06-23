@@ -32,7 +32,7 @@ Thumbs.db
 /secrets/
 .github/workflows/*.local.yml
 
-# Workflow specific
-/workflow/log/
+# Workflow & Project specific
+/workflow/logs/
 /workflow/resources/
 /results/
