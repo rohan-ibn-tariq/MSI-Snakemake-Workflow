@@ -5,8 +5,8 @@
 BEGIN { 
     OFS = "\t"
     
-    if (format_tag == "") format_tag = "GT"
-    if (description == "") description = "Genotype"
+    format_tag = format_tag ? format_tag : "GT"
+    description = description ? description : "Genotype"
     
     format_header = "##FORMAT=<ID=" format_tag ",Number=1,Type=String,Description=\"" description "\">"
     
@@ -29,4 +29,8 @@ BEGIN {
         $9 = format_tag
     }
     print $0
+}
+
+END {
+    close("/dev/stderr")
 }
