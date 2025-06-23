@@ -9,4 +9,4 @@ RUN micromamba create -n snakemake-msi-env -f environment.yaml -y && \
 
 SHELL ["/bin/bash", "-c"]
 
-CMD ["micromamba", "run", "-n", "snakemake-msi-env", "snakemake", "--cores", "2"]
+CMD ["micromamba", "run", "-n", "snakemake-msi-env", "snakemake", "--use-conda", "--cores", "4"]
