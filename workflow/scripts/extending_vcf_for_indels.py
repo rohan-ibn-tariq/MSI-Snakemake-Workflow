@@ -12,13 +12,57 @@ region multiple times.
 
 import argparse
 import os
-import subprocess
 import random
 import re
+import subprocess
+import sys
 from collections import defaultdict
 
 import pysam
 from binning import assign_bin
+
+
+def validate_probability(value, param_name, allow_zero=True):
+    """Validate probability is in valid range [0, 1] or (0, 1]."""
+    try:
+        fvalue = float(value)
+
+        if allow_zero:
+            if fvalue < 0 or fvalue > 1:
+                raise argparse.ArgumentTypeError(
+                    f"{param_name} must be in range [0, 1]. Got: {fvalue}"
+                )
+        else:
+            if fvalue <= 0 or fvalue > 1:
+                raise argparse.ArgumentTypeError(
+                    f"{param_name} must be in range (0, 1]. Got: {fvalue}"
+                )
+
+        return fvalue
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"{param_name} must be a number. Got: {value}"
+        ) from exc
+
+
+def validate_mono_penalty(value):
+    """Validate mono_penalty is in valid range (0, 1]."""
+    return validate_probability(value, "mono_penalty", allow_zero=False)
+
+
+def validate_rate(value):
+    """Validate rate is in valid range [0, 1]."""
+    return validate_probability(value, "rate", allow_zero=True)
+
+
+def validate_combined_rates(ins_rate, del_rate):
+    """Validate that combined insertion and deletion rates don't exceed 1."""
+    total_rate = ins_rate + del_rate
+    if total_rate > 1:
+        raise ValueError(
+            f"Combined ins_rate + del_rate ({total_rate:.3f}) cannot exceed 1.0. "
+            f"Got ins_rate={ins_rate}, del_rate={del_rate}"
+        )
 
 
 def parse_args():
@@ -45,16 +89,26 @@ def parse_args():
         "--seed", type=int, default=50, help="Random seed for reproducibility"
     )
     parser.add_argument(
-        "--ins-rate", type=float, default=0.15, help="MSI indel's insertion rate"
+        "--ins-rate",
+        type=validate_rate,
+        default=0.15,
+        help="MSI indel's insertion rate",
     )
     parser.add_argument(
-        "--del-rate", type=float, default=0.15, help="MSI indels deletion rate"
+        "--del-rate", type=validate_rate, default=0.15, help="MSI indels deletion rate"
     )
     parser.add_argument(
         "--boost-rate",
-        type=float,
-        default=0.6,
+        type=validate_rate,
+        default=0.4,
         help="Overall probability of injecting into eligible motifs",
+    )
+    parser.add_argument(
+        "--mono-penalty",
+        type=validate_mono_penalty,
+        default=0.05,
+        help="Probability multiplier for mononucleotide repeats "
+        "(0 < value ≤ 1, default: 0.05 = 20x less likely)",
     )
     parser.add_argument(
         "--verbose",
@@ -68,9 +122,18 @@ def normalize_chromosome(chrom):
     """
     Normalizing the name without chr if chr exists for proper injection.
     """
-    return (
-        chrom.removeprefix("chr") if chrom.startswith("chr") else chrom
-    )
+    return chrom.removeprefix("chr") if chrom.startswith("chr") else chrom
+
+
+def get_motif_bias_multiplier(motif_length, mono_penalty):
+    """
+    Return bias multiplier based on motif length.
+    Heavily penalizes mononucleotide repeats, keeps others normal.
+    """
+    if motif_length == 1:
+        return mono_penalty
+
+    return 1.0
 
 
 def load_repeats(bedfile):
@@ -95,7 +158,9 @@ def load_repeats(bedfile):
                 end = int(fields[3])
                 name = fields[4]
             except (ValueError, IndexError) as e:
-                print(f"[INJ-INDEL WARNING] Skipping malformed line: {line.strip()} ({e})")
+                print(
+                    f"[INJ-INDEL WARNING] Skipping malformed line: {line.strip()} ({e})"
+                )
                 continue
             repeats[chrom][bin_id].append((start, end, name))
     return repeats
@@ -116,17 +181,31 @@ def add_msi_info_fields(header):
     header.info.add("MSI_TYPE", 1, "String", "Injected indel type: INS or DEL")
     header.info.add("MSI_MOTIF", 1, "String", "Repeat motif used for indel injection")
     header.info.add("MSI_ORIG_REPEATS", 1, "Integer", "Original repeat count from BED")
-    header.info.add("MSI_CHANGE", 1, "Integer", "Number of motif units inserted or deleted")
+    header.info.add(
+        "MSI_CHANGE", 1, "Integer", "Number of motif units inserted or deleted"
+    )
 
 
-def log_injection_start(ins_rate, del_rate, boost_rate):
+def log_injection_start(ins_rate, del_rate, boost_rate, mono_penalty):
     """
     Logs the start of the injection process and the effective rates.
     """
     print("[INJ-INDEL INFO] Starting injection process...")
-    print(f"[INJ-INDEL INFO] Effective injection rate: {(ins_rate + del_rate) * boost_rate:.2%}")
+    print(
+        f"[INJ-INDEL INFO] Effective injection rate: {(ins_rate + del_rate) * boost_rate:.2%}"
+    )
     print(f"[INJ-INDEL INFO] Insertion rate: {ins_rate * boost_rate:.2%}")
-    print(f"[INJ-INDEL INFO] Deletion rate: {del_rate * boost_rate:.2%}\n")
+    print(f"[INJ-INDEL INFO] Deletion rate: {del_rate * boost_rate:.2%}")
+    print(
+        f"[INJ-INDEL INFO] Mononucleotide penalty: "
+        f"{mono_penalty:.3f} ({1/mono_penalty:.0f}x less likely)"
+    )
+    print(
+        "[INJ-INDEL INFO] Using MSI tumor genotype distribution for human diploid cells:"
+    )
+    print("  Heterozygous (0/1): 45% - One allele affected by MSI")
+    print("  Homozygous variant (1/1): 45% - Both alleles affected")
+    print("  Reference (0/0): 10% - Some cells unaffected\n")
     print("[INJ-INDEL INFO] Phase 1: Processing existing variants!")
 
 
@@ -134,7 +213,9 @@ def log_phase2_start(total_existing):
     """
     Simple Phase 1 to 2 transition log.
     """
-    print(f"[INJ-INDEL INFO] Phase 1 complete. Total existing variants: {total_existing}\n")
+    print(
+        f"[INJ-INDEL INFO] Phase 1 complete. Total existing variants: {total_existing}\n"
+    )
     print("[INJ-INDEL INFO] Phase 2: Injecting MSI indels at microsatellite regions...")
 
 
@@ -166,7 +247,7 @@ def log_msi_summary(
     msi_skipped_validation,
     msi_skipped_coord_mismatch,
     injected,
-    total
+    total,
 ):
     """
     Indel Injection Summary Report
@@ -185,9 +266,38 @@ def warn_no_indels_injected():
     Warning if no indels injected.
     """
     print("\n[INJ-INDEL WARNING] No indels injected. Possible reasons:")
-    print("  - Rate parameters too low (try increasing --ins-rate, --del-rate, or --boost-rate)")
+    print(
+        "  - Rate parameters too low (try increasing --ins-rate, --del-rate, or --boost-rate)"
+    )
     print("  - All microsatellite positions already have variants")
     print("  - Microsatellite regions don't match reference sequence")
+
+
+def assign_msi_genotype():
+    """
+    Assign realistic genotype for MSI variants in human tumor samples.
+    """
+    r = random.random()
+
+    if r < 0.45:
+        return (0, 1)
+    if r < 0.90:
+        return (1, 1)
+    return (0, 0)
+
+
+def ensure_fasta_index(ref_fasta_path):
+    """
+    Create FASTA index if it doesn't exist using pysam.
+    """
+    fai_path = ref_fasta_path + ".fai"
+
+    if not os.path.exists(fai_path):
+        print(f"[INJ-INDEL INFO] Creating FASTA index: {fai_path}")
+        pysam.faidx(ref_fasta_path)
+        print("[INJ-INDEL INFO] FASTA index created successfully")
+    else:
+        print(f"[INJ-INDEL INFO] Using existing FASTA index: {fai_path}")
 
 
 def inject_indels(
@@ -206,24 +316,24 @@ def inject_indels(
     boost_rate = config["boost_rate"]
     ref_fasta_path = config["ref_fasta_path"]
     verbose = config.get("verbose", False)
+    mono_penalty = config["mono_penalty"]
 
     if not os.path.exists(vcf_in):
         raise FileNotFoundError(f"[INJ-INDEL ERROR] VCF input not found: {vcf_in}")
 
-    fai_path = ref_fasta_path + ".fai"
-    if not os.path.exists(fai_path):
-        raise FileNotFoundError(f"[INJ-INDEL ERROR] Reference FASTA index not found: {fai_path}")
+    ensure_fasta_index(ref_fasta_path)
 
     random.seed(seed)
 
-    vcf = pysam.VariantFile(vcf_in)
+    vcf = pysam.VariantFile(vcf_in)  # pylint: disable=no-member
     add_msi_info_fields(vcf.header)
 
-    ref_fasta = pysam.FastaFile(ref_fasta_path)
+    ref_fasta = pysam.FastaFile(ref_fasta_path)  # pylint: disable=no-member
 
     outdir = os.path.dirname(vcf_out)
     if outdir and not os.path.exists(outdir):
         os.makedirs(outdir, exist_ok=True)
+    # pylint: disable=no-member
     out = pysam.VariantFile(vcf_out, "w", header=vcf.header)
 
     injected = 0
@@ -231,48 +341,11 @@ def inject_indels(
     existing_variant_positions = set()
     existing_variant_ranges = defaultdict(list)
 
-    log_injection_start(ins_rate, del_rate, boost_rate)
+    log_injection_start(ins_rate, del_rate, boost_rate, mono_penalty)
 
     # Phase 1: Write all existing variants and track their positions/ranges
     for rec in vcf:
         total += 1
-
-        ######TODO: REMOVE ############################################
-        # DEBUG: Print sample info for first record
-        if total == 1:
-            print(f"[DEBUG] First record format: {list(rec.format)}")
-            print(f"[DEBUG] Sample names: {list(rec.samples.keys())}")
-            for sample_name in rec.samples:
-                sample_obj = rec.samples[sample_name]
-                print(f"[DEBUG] Sample '{sample_name}' object: {sample_obj}")
-        
-            print(f"[DEBUG] Full record string: {str(rec)}")
-        
-            try:
-                print(f"[DEBUG] Sample values: {sample_obj.values()}")
-            except:
-                pass
-            
-            try:
-                print(f"[DEBUG] Sample items: {list(sample_obj.items())}")
-            except:
-                pass
-            
-            try:
-                print(f"[DEBUG] Sample keys: {list(sample_obj.keys())}")
-            except:
-                pass
-            
-            try:
-                print(f"[DEBUG] Sample phased: {sample_obj.phased}")
-            except:
-                pass
-            
-            try:
-                print(f"[DEBUG] Sample alleles: {sample_obj.alleles}")
-            except:
-                pass
-        ########################TODO:DEBUG REMOVE ABOVE##################################
 
         out.write(rec)
 
@@ -309,8 +382,8 @@ def inject_indels(
                 total_repeats = int(total_repeats_str)
                 motif_len = len(motif)
 
-                # Skip if motif is too long or only one repeat
-                if motif_len > 10 or total_repeats <= 1:
+                # Skip if motif is too long or less than 5 repeats or more than 50 repeats
+                if motif_len > 6 or total_repeats < 5 or total_repeats > 50:
                     continue
 
                 expected_length = motif_len * total_repeats
@@ -358,24 +431,24 @@ def inject_indels(
                     ref_seq = ref_fasta.fetch(
                         chrom, repeat_span_start, repeat_span_end
                     ).upper()
-                except Exception as e:
+                except (OSError, ValueError, KeyError) as e:
                     print(
-                        f"[INJ-INDEL WARNING]: Failed to fetch reference at {chrom}:{repeat_span_start}-{repeat_span_end}: {e}"
+                        f"[INJ-INDEL WARNING]: Failed to fetch reference at "
+                        f"{chrom}:{repeat_span_start}-{repeat_span_end}: {e}"
                     )
                     continue
 
                 expected_seq = motif * total_repeats
                 if ref_seq != expected_seq:
                     msi_skipped_validation += 1
-                    if (
-                        verbose and msi_skipped_validation
-                    ):
+                    if verbose and msi_skipped_validation:
                         print(f"\n{'='*80}")
                         print(
                             f"VALIDATION FAIL at {chrom}:{repeat_span_start}-{repeat_span_end}"
                         )
                         print(
-                            f"    Expected: {expected_seq[:50]}{'...' if len(expected_seq) > 50 else ''}"
+                            f"    Expected: "
+                            f"{expected_seq[:50]}{'...' if len(expected_seq) > 50 else ''}"
                         )
                         print(
                             f"    Found:    {ref_seq[:50]}{'...' if len(ref_seq) > 50 else ''}"
@@ -386,15 +459,24 @@ def inject_indels(
 
                 # Decide whether to inject an indel based on rates
                 r = random.random()
-                if r < (ins_rate + del_rate) * boost_rate:
+                motif_bias = get_motif_bias_multiplier(motif_len, mono_penalty)
+                effective_rate = (ins_rate + del_rate) * boost_rate * motif_bias
+
+                if r < effective_rate:
+                    # if r < (ins_rate + del_rate) * boost_rate:
                     indel_type = "INS" if r < ins_rate * boost_rate else "DEL"
 
                     # Determine the size of the change
                     if indel_type == "INS":
-                        change = random.randint(1, 10)
+                        max_ins = min(6, 50 - total_repeats)
+                        if max_ins < 1:
+                            continue
+                        change = random.randint(1, max_ins)
                     else:
-                        max_del = min(total_repeats - 1, 10)
-                        change = random.randint(1, max_del) if max_del >= 1 else 1
+                        max_del = min(6, total_repeats - 5)
+                        if max_del < 1:
+                            continue
+                        change = random.randint(1, max_del)
 
                     # Create the indel sequence
                     motif_block = motif * change
@@ -431,7 +513,8 @@ def inject_indels(
                             chrom, start + expected_length, context_end
                         ).upper()
                         log_lines.append(
-                            f"  With context: {upstream}[{ms_seq[:30]}{'...' if len(ms_seq) > 30 else ''}]{downstream}"
+                            f"  With context: {upstream}"
+                            f"[{ms_seq[:30]}{'...' if len(ms_seq) > 30 else ''}]{downstream}"
                         )
 
                         log_lines.append("\nInjected Variant:")
@@ -440,7 +523,8 @@ def inject_indels(
                             f"  Change: {'+' if indel_type == 'INS' else '-'}{change} {motif} units"
                         )
                         log_lines.append(
-                            f"  Sequence {'added' if indel_type == 'INS' else 'removed'}: {motif_block}"
+                            f"  Sequence {'added' if indel_type == 'INS' else 'removed'}:"
+                            f" {motif_block}"
                         )
 
                     new_rec = vcf.header.new_record()
@@ -472,24 +556,30 @@ def inject_indels(
                         new_rec.ref = ref_base
                         new_rec.alts = (ref_base + motif_block,)
 
+                        for sample in vcf.header.samples:
+                            new_rec.samples[sample]["GT"] = assign_msi_genotype()
+
                         if verbose:
-                            log_lines.append(f"\nVCF Record:")
+                            log_lines.append("\nVCF Record:")
                             log_lines.append(f"  CHROM: {new_rec.chrom}")
                             log_lines.append(f"  POS: {new_rec.pos}")
                             log_lines.append(f"  REF: {new_rec.ref}")
                             log_lines.append(
-                                f"  ALT: {new_rec.alts[0][:20]}{'...' if len(new_rec.alts[0]) > 20 else ''}"
+                                f"  ALT: {new_rec.alts[0][:20]}"
+                                f"{'...' if len(new_rec.alts[0]) > 20 else ''}"
                             )
                             log_lines.append(
-                                f"  Interpretation: Insert '{motif_block}' after microsatellite at position {end}"
+                                f"  GT: {new_rec.samples[list(vcf.header.samples)[0]]['GT']}"
+                            )
+                            log_lines.append(
+                                f"  Interpretation: Insert "
+                                f"'{motif_block}' after microsatellite at position {end}"
                             )
                             log_lines.append(
                                 f"  New repeat count: {total_repeats + change}"
                             )
                     else:
-                        anchor_pos = (
-                            end - change * motif_len
-                        )
+                        anchor_pos = end - change * motif_len
                         ref_start = anchor_pos - 1
                         ref_end = end
 
@@ -500,7 +590,8 @@ def inject_indels(
                         expected_len = 1 + (change * motif_len)
                         if len(ref_seq) != expected_len:
                             print(
-                                f"WARNING: Reference length mismatch for deletion at {chrom}:{ref_start}-{ref_end}"
+                                f"WARNING: Reference length mismatch for "
+                                f"deletion at {chrom}:{ref_start}-{ref_end}"
                             )
                             continue
 
@@ -508,6 +599,9 @@ def inject_indels(
                         new_rec.stop = new_rec.pos + len(ref_seq) - 1
                         new_rec.ref = ref_seq
                         new_rec.alts = (ref_seq[0],)
+
+                        for sample in vcf.header.samples:
+                            new_rec.samples[sample]["GT"] = assign_msi_genotype()
 
                         if verbose:
                             log_lines.append("\nVCF Record:")
@@ -518,7 +612,11 @@ def inject_indels(
                             )
                             log_lines.append(f"  ALT: {new_rec.alts[0]}")
                             log_lines.append(
-                                f"  Interpretation: Delete '{motif_block}' from end of microsatellite region (starting at {anchor_pos + 1})"
+                                f"  GT: {new_rec.samples[list(vcf.header.samples)[0]]['GT']}"
+                            )
+                            log_lines.append(
+                                f"  Interpretation: Delete '{motif_block}' "
+                                f"from end of microsatellite region (starting at {anchor_pos + 1})"
                             )
                             log_lines.append(
                                 f"  New repeat count: {total_repeats - change}"
@@ -540,7 +638,7 @@ def inject_indels(
     out.close()
     ref_fasta.close()
     vcf.close()
-    sort_vcf_with_bcftools(vcf_out)
+    # sort_vcf_with_bcftools(vcf_out)
     log_msi_summary(
         msi_candidates,
         msi_skipped_existing,
@@ -562,12 +660,20 @@ def main():
     3. Injecting MSI Indels.
     """
     args = parse_args()
+
+    try:
+        validate_combined_rates(args.ins_rate, args.del_rate)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
     repeats = load_repeats(args.bed)
     config = {
         "ins_rate": args.ins_rate,
         "del_rate": args.del_rate,
         "seed": args.seed,
         "boost_rate": args.boost_rate,
+        "mono_penalty": args.mono_penalty,
         "ref_fasta_path": args.ref_fasta,
         "verbose": args.verbose,
     }
