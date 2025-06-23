@@ -28,9 +28,9 @@ rule all:
     input:
         # Data preparation outputs
         "workflow/resources/reference-sequence/genome.fasta",
-        "workflow/resources/reference-sequence/genome.fasta.bwt"
+        "workflow/resources/reference-sequence/genome.fasta.bwt",
         "results/data-preparation/repeats/pytrf_output.csv",
-        "results/data-preparation/ms-bed/genome.bed",
+        # "results/data-preparation/ms-bed/genome.bed",
         "results/data-preparation/ms-bed/sample_test.bed",
         # Simulation processing outputs
         "results/simulation-processing/simulated-mason-variant/genome_sim_raw.vcf",

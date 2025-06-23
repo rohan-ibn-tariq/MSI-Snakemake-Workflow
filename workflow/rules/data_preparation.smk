@@ -62,7 +62,7 @@ rule csv_to_bed:
     input:
         csv="results/data-preparation/repeats/pytrf_output.csv",
     output:
-        bed="results/data-preparation/ms-bed/genome.bed",
+        bed="results/data-preparation/ms-bed/sample_test.bed",
     log:
         "workflow/logs/data-preparation/csv_to_bed.log",
     params:
@@ -73,14 +73,14 @@ rule csv_to_bed:
         "python {params.script} --csv {input.csv} --bed {output.bed} > {log} 2>&1"
 
 
-rule create_test_bed:
-    input:
-        "results/data-preparation/ms-bed/genome.bed",
-    output:
-        "results/data-preparation/ms-bed/sample_test.bed",
-    log:
-        "workflow/logs/data-preparation/create_test_bed.log",
-    params:
-        num_entries=4000,
-    shell:
-        "head -n {params.num_entries} {input} > {output} 2> {log}"
+# rule create_test_bed:
+#     input:
+#         "results/data-preparation/ms-bed/genome.bed",
+#     output:
+#         "results/data-preparation/ms-bed/sample_test.bed",
+#     log:
+#         "workflow/logs/data-preparation/create_test_bed.log",
+#     params:
+#         num_entries=4000,
+#     shell:
+#         "head -n {params.num_entries} {input} > {output} 2> {log}"
