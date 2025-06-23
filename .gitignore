@@ -34,5 +34,5 @@ Thumbs.db
 
 # Workflow & Project specific
 /workflow/logs/
-/workflow/resources/
+/workflow/resources/reference-sequence/
 /results/
