@@ -22,6 +22,19 @@ rule get_genome:
         "v6.2.0/bio/reference/ensembl-sequence"
 
 
+rule bwa_index:
+    input:
+        "workflow/resources/reference-sequence/genome.fasta",
+    output:
+        "workflow/resources/reference-sequence/genome.fasta.bwt",
+    conda:
+        "../envs/simulation_and_variation.yaml"
+    log:
+        "workflow/logs/data-preparation/bwa_index.log",
+    shell:
+        "bwa index {input} > {log} 2>&1"
+
+
 rule run_pytrf:
     input:
         fasta="workflow/resources/reference-sequence/genome.fasta",

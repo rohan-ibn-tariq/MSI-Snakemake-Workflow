@@ -27,17 +27,17 @@ include: "rules/data_analysis.smk"
 rule all:
     input:
         # Data preparation outputs
-        "workflow/resources/genome.fasta",
-        "results/msi-bed/genome.bed",
-        "results/msi-bed/sample_test.bed",
-        "results/repeats/pytrf_output.csv",
+        "workflow/resources/reference-sequence/genome.fasta",
+        "workflow/resources/reference-sequence/genome.fasta.bwt"
+        "results/data-preparation/repeats/pytrf_output.csv",
+        "results/data-preparation/ms-bed/genome.bed",
+        "results/data-preparation/ms-bed/sample_test.bed",
         # Simulation processing outputs
-        "results/simulated-mason-variant/genome_sim_raw.vcf",
-        "results/simulated-mason-variant/genome_sim.vcf",
-        "results/msi-indels-vcf/genome_sim_indels.vcf",
-        "results/msi-indels-vcf/genome_filtered.vcf",
-        "results/simulated-bam/alignments.bam",
-        "results/varlociraptor-calls/variants.bcf",
+        "results/simulation-processing/simulated-mason-variant/genome_sim_raw.vcf",
+        "results/simulation-processing/simulated-mason-variant/genome_sim.vcf",
+        "results/simulation-processing/msi-indels-vcf/genome_sim_indels.vcf",
+        "results/simulation-processing/simulated-bam/alignments.bam",
+        "results/simulation-processing/varlociraptor-calls/variants.bcf",
         # Analysis results outputs
-        "results/varlociraptor-calls/variants.vcf",
-        "results/msi-quantification/msi_variants_detailed.tsv",
+        "results/data-analysis/varlociraptor-calls/variants.vcf",
+        "results/data-analysis/msi-quantification/chr22_report.html",
