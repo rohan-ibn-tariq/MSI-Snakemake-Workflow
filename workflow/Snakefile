@@ -18,6 +18,11 @@ Reference: Human genome GRCh38, Chromosome 22
 Output: MSI burden quantification and visualization
 """
 
+configfile: "workflow/config/config.yaml"
+
+
+CHROMOSOMES = config["chromosomes"]
+
 
 include: "rules/data_preparation.smk"
 include: "rules/simulation_processing.smk"
@@ -27,17 +32,22 @@ include: "rules/data_analysis.smk"
 rule all:
     input:
         # Data preparation outputs
-        "workflow/resources/reference-sequence/genome.fasta",
-        "workflow/resources/reference-sequence/genome.fasta.bwt",
-        "results/data-preparation/repeats/pytrf_output.csv",
+        expand("workflow/resources/reference-sequence/chr{chrom}/genome.fasta", chrom=CHROMOSOMES),
+        expand("workflow/resources/reference-sequence/chr{chrom}/genome.fasta.bwt", chrom=CHROMOSOMES),
+        expand("results/data-preparation/repeats/chr{chrom}_pytrf_output.csv", chrom=CHROMOSOMES),
+        expand("workflow/resources/annotation/chr{chrom}.gtf", chrom=CHROMOSOMES),
         # "results/data-preparation/ms-bed/genome.bed",
-        "results/data-preparation/ms-bed/sample_test.bed",
+        expand("results/data-preparation/ms-bed/chr{chrom}_sample_test.bed", chrom=CHROMOSOMES),
         # Simulation processing outputs
-        "results/simulation-processing/simulated-mason-variant/genome_sim_raw.vcf",
-        "results/simulation-processing/simulated-mason-variant/genome_sim.vcf",
-        "results/simulation-processing/msi-indels-vcf/genome_sim_indels.vcf",
-        "results/simulation-processing/simulated-bam/alignments.bam",
-        "results/simulation-processing/varlociraptor-calls/variants.bcf",
+        expand("results/simulation-processing/simulated-mason-variant/chr{chrom}_sim_raw.vcf", chrom=CHROMOSOMES),
+        expand("results/simulation-processing/simulated-mason-variant/chr{chrom}_sim.vcf", chrom=CHROMOSOMES),
+        expand("results/simulation-processing/msi-indels-vcf/chr{chrom}_sim_indels.vcf", chrom=CHROMOSOMES),
+        expand("results/simulation-processing/simulated-bam/chr{chrom}_alignments.bam", chrom=CHROMOSOMES),
+        expand("results/simulation-processing/varlociraptor-calls/chr{chrom}_variants.bcf", chrom=CHROMOSOMES),
         # Analysis results outputs
-        "results/data-analysis/varlociraptor-calls/variants.vcf",
-        "results/data-analysis/msi-quantification/chr22_report.html",
+        expand("results/data-analysis/varlociraptor-calls/chr{chrom}_variants.vcf", chrom=CHROMOSOMES),
+        expand("results/data-analysis/coding-regions/chr{chrom}_coding.bed", chrom=CHROMOSOMES),
+        expand("results/data-analysis/coding-intersected/chr{chrom}_coding_variants.vcf", chrom=CHROMOSOMES),
+        expand("results/data-analysis/msi-quantification/chr{chrom}_report.html", chrom=CHROMOSOMES),
+        expand("results/data-analysis/msi-analysis/chr{chrom}_msi_results.json", chrom=CHROMOSOMES),
+

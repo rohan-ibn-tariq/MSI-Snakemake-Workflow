@@ -1,0 +1,26 @@
+# MSI Analysis Workflow Configuration
+# =====================================
+
+# Chromosomes to analyze
+chromosomes: ["19", "22", "all"]
+
+# Reference genome settings
+reference:
+  species: "homo_sapiens"
+  build: "GRCh38"
+  release: "112"
+
+# Analysis parameters  
+msi_analysis:
+  threads: 4
+  min_repeats: [5, 5, 5, 5, 5, 5]
+
+# Simulation parameters
+simulation:
+  seed: 50
+  small_indel_rate: 0.001
+  ins_rate: 0.30
+  del_rate: 0.30
+  boost_rate: 0.70
+  num_fragments: 200000
+  read_length: 150
