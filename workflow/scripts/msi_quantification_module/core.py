@@ -554,3 +554,113 @@ def bin_based_threaded_intersection(variants, regions, n_threads):
     print(f"  Regions unprocessed: {regions_unprocessed:,}")
     print(f"  Total regions: {total_regions_loaded:,}")
     return final_results, total_regions_loaded, unprocessed_count, merged_count
+
+def create_msi_quantification(results):
+
+    msi_regions = len([r for r in results if r.get("num_perfect_repeats", 0) > 0])
+    non_msi_regions_with_indels = len(
+        [
+            r
+            for r in results
+            if r.get("has_variants") == True and r.get("num_perfect_repeats", 0) == 0
+        ]
+    )
+    stable_regions = len([r for r in results if r.get("has_variants") == False])
+    total_variants = sum(len(r.get("variants", [])) for r in results)
+    perfect_variants = sum(r.get("num_perfect_repeats", 0) for r in results)
+    na_variants = total_variants - perfect_variants
+
+    insertion_sizes = []
+    deletion_sizes = []
+    insertion_units = []
+    deletion_units = []
+    allele_frequencies = []
+    perfect_insertion_count = 0
+    perfect_deletion_count = 0
+    af_zero_count = 0
+    af_na_count = 0
+
+    for region in results:
+        for variant in region.get("variants", []):
+            if variant.get("repeat_status") == "perfect":
+                if variant["variant_type"] == "insertion":
+                    perfect_insertion_count += 1
+                    insertion_sizes.append(variant["svlen"])
+                    if len(variant["motif"]) > 0:
+                        insertion_units.append(variant["svlen"] / len(variant["motif"]))
+                else:
+                    perfect_deletion_count += 1
+                    deletion_sizes.append(abs(variant["svlen"]))
+                    if len(variant["motif"]) > 0:
+                        deletion_units.append(
+                            abs(variant["svlen"]) / len(variant["motif"])
+                        )
+
+                if isinstance(variant["af_max"], (int, float)):
+                    if variant["af_max"] > 0:
+                        allele_frequencies.append(variant["af_max"])
+                    else:
+                        af_zero_count += 1
+                else:
+                    af_na_count += 1
+
+    motif_summary = {}
+    for region in results:
+        motif_type = region.get("motif_type", "unknown")
+        if motif_type not in motif_summary:
+            motif_summary[motif_type] = {
+                "total": 0,
+                "msi": 0,
+                "non_msi_with_indels": 0,
+                "stable": 0,
+            }
+
+        motif_summary[motif_type]["total"] += 1
+        if region.get("num_perfect_repeats", 0) > 0:
+            motif_summary[motif_type]["msi"] += 1
+        elif region.get("has_variants") == True:
+            motif_summary[motif_type]["non_msi_with_indels"] += 1
+        else:
+            motif_summary[motif_type]["stable"] += 1
+
+    return {
+        "data_scope": {
+            "total_ms_regions": len(results),
+            "msi_regions_with_perfect_indels": msi_regions,
+            "non_msi_regions_with_indels": non_msi_regions_with_indels,
+            "stable_regions": stable_regions,
+            "total_variants_found": total_variants,
+            "perfect_msi_variants_analyzed": perfect_variants,
+            "na_variants_excluded": na_variants,
+            "analysis_note": "All histograms and AF analysis based on perfect MSI variants only",
+        },
+        "overview": {
+            "total_regions": len(results),
+            "msi_regions": msi_regions,
+            "non_msi_regions_with_indels": non_msi_regions_with_indels,
+            "stable_regions": stable_regions,
+            "msi_rate": (msi_regions / len(results)) * 100,
+        },
+        "indels": {
+            "insertion_count": perfect_insertion_count,
+            "deletion_count": perfect_deletion_count,
+            "insertion_sizes": insertion_sizes,
+            "deletion_sizes": deletion_sizes,
+            "insertion_units": insertion_units,
+            "deletion_units": deletion_units,
+        },
+        "allele_frequencies": {
+            "values": allele_frequencies,
+            "count": len(allele_frequencies),
+            "mean": (
+                sum(allele_frequencies) / len(allele_frequencies)
+                if allele_frequencies
+                else 0
+            ),
+            "count_with_zero_af": af_zero_count,
+            "count_with_na_af": af_na_count,
+            "mean_note": "Mean calculated from non-zero, non-N/A values only",
+            "note": "AF values from perfect MSI variants only",
+        },
+        "motif_breakdown": motif_summary,
+    }
