@@ -5,7 +5,7 @@ Debug logging, data validation, and detailed analysis reporting.
 Provides comprehensive debugging capabilities for MSI analysis workflow.
 """
 
-from .core import create_msi_quantification
+from msi_quantification_module.core import create_msi_quantification
 from datetime import datetime
 
 def initialize_debug_log(debug_file_path, args):
