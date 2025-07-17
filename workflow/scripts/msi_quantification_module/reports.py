@@ -210,17 +210,17 @@ def generate_msi_html_report(msi_data, output_path):
             <tr>
                 <td>Variants with AF_max > 0</td>
                 <td>{af['count']:,}</td>
-                <td>{(af['count']/scope['perfect_msi_variants_analyzed']*100):.1f}%</td>
+                <td>{(af['count']/scope['perfect_msi_variants_analyzed']*100 if scope['perfect_msi_variants_analyzed'] > 0 else 0.0):.1f}%</td>
             </tr>
             <tr>
                 <td>Variants with AF_max = 0</td>
                 <td>{af['count_with_zero_af']:,}</td>
-                <td>{(af['count_with_zero_af']/scope['perfect_msi_variants_analyzed']*100):.1f}%</td>
+                <td>{(af['count_with_zero_af']/scope['perfect_msi_variants_analyzed']*100 if scope['perfect_msi_variants_analyzed'] > 0 else 0.0):.1f}%</td>
             </tr>
             <tr>
                 <td>Variants with AF_max = N/A</td>
                 <td>{af['count_with_na_af']:,}</td>
-                <td>{(af['count_with_na_af']/scope['perfect_msi_variants_analyzed']*100):.1f}%</td>
+                <td>{(af['count_with_na_af']/scope['perfect_msi_variants_analyzed']*100 if scope['perfect_msi_variants_analyzed'] > 0 else 0.0):.1f}%</td>
             </tr>
             <tr>
                 <td><strong>Total Perfect MSI Variants</strong></td>

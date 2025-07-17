@@ -48,6 +48,8 @@ rule all:
         expand("results/data-analysis/varlociraptor-calls/chr{chrom}_variants.vcf", chrom=CHROMOSOMES),
         expand("results/data-analysis/coding-regions/chr{chrom}_coding.bed", chrom=CHROMOSOMES),
         expand("results/data-analysis/coding-intersected/chr{chrom}_coding_variants.vcf", chrom=CHROMOSOMES),
+        expand("results/data-analysis/coding-msi-bed/chr{chrom}_coding_msi.bed", chrom=CHROMOSOMES),
+        expand("results/data-analysis/coding-regions/chr{chrom}_coding_for_vcf.bed", chrom=CHROMOSOMES),
         expand("results/data-analysis/msi-quantification/chr{chrom}_report.html", chrom=CHROMOSOMES),
-        expand("results/data-analysis/msi-analysis/chr{chrom}_msi_results.json", chrom=CHROMOSOMES),
-
+        expand("results/data-analysis/msi-analysis-coding/chr{chrom}/msi_results.json", chrom=CHROMOSOMES),
+        expand("results/data-analysis/msi-analysis-full/chr{chrom}/msi_results.json", chrom=CHROMOSOMES),

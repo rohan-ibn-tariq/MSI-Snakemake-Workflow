@@ -154,19 +154,35 @@ rule csv_to_bed:
 #         "head -n {params.num_entries} {input} > {output} 2> {log}"
 
 
-rule get_ensembl_annotation:
+rule get_complete_annotation:
     output:
-        "workflow/resources/annotation/chr{chrom}.gtf"
+        "workflow/resources/annotation/complete.gtf"
     params:
         species=config["reference"]["species"],
         build=config["reference"]["build"],
         release=config["reference"]["release"],
         fmt="gtf",
-        chromosome=lambda wildcards: [] if wildcards.chrom == "all" else [wildcards.chrom]
     log:
-        "workflow/logs/data-preparation/get_ensembl_annotation_chr{chrom}.log"
+        "workflow/logs/data-preparation/get_complete_annotation.log"
     wrapper:
         "v6.2.0/bio/reference/ensembl-annotation"
+
+
+rule split_annotation_by_chromosome:
+    input:
+        "workflow/resources/annotation/complete.gtf"
+    output:
+        "workflow/resources/annotation/chr{chrom}.gtf"
+    log:
+        "workflow/logs/data-preparation/split_annotation_chr{chrom}.log"
+    shell:
+        """
+        if [ "{wildcards.chrom}" = "all" ]; then
+            cp {input} {output} 2> {log}
+        else
+            grep "^{wildcards.chrom}[[:space:]]" {input} > {output} 2> {log}
+        fi
+        """
 
 
 # rule get_ensembl_annotation:

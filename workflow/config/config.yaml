@@ -2,7 +2,8 @@
 # =====================================
 
 # Chromosomes to analyze
-chromosomes: ["19", "22", "all"]
+#chromosomes: ["19", "22", "all"]
+chromosomes: ["22"]
 
 # Reference genome settings
 reference:

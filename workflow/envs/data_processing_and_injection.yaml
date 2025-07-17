@@ -9,3 +9,4 @@ dependencies:
   - altair
   - pysam
   - bcftools
+  - polars
