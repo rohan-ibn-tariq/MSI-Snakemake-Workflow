@@ -6,6 +6,10 @@ __pycache__/
 *.egg
 *.log
 
+# R
+.RData
+.Rhistory
+
 # Snakemake
 .snakemake/
 *.snakemake.log
@@ -35,5 +39,8 @@ Thumbs.db
 # Workflow & Project specific
 /workflow/logs/
 /workflow/resources/reference-sequence/
+/workflow/resources/annotation/
 /results/
 /debug/
+/tmp/
+/benchmarks/
