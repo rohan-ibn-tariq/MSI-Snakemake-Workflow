@@ -212,6 +212,10 @@ def analyze_variant_in_region(variant_data, region_data):
         "repeat_status": repeat_status,
         "af_mean": variant_data["af_mean"],
         "af_max": variant_data["af_max"],
+        "prob_present": variant_data["prob_present"],
+        "prob_absent": variant_data["prob_absent"],
+        "prob_artifact": variant_data["prob_artifact"],
+        "sample_afs": variant_data["sample_afs"],
     }
 
 
