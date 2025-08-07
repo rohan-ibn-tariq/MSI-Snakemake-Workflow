@@ -11,6 +11,8 @@ from binning import assign_bin
 from scipy.stats import chisquare
 from scipy.stats import false_discovery_control
 
+from msi_quantification_module.utils import phred_to_prob
+
 
 def normalize_chromosome(chrom):
     """
@@ -640,21 +642,9 @@ def load_vcf_variants(vcf_file):
                     "vcf_id": record.id if record.id and record.id != "." else None,
                     "svlen": svlen,
                     "variant_type": variant_type,
-                    "prob_present": (
-                        10 ** (-float(prob_present) / 10)
-                        if prob_present is not None and prob_present != float("inf")
-                        else 0.0
-                    ),
-                    "prob_absent": (
-                        10 ** (-float(prob_absent) / 10)
-                        if prob_absent is not None and prob_absent != float("inf")
-                        else 0.0
-                    ),
-                    "prob_artifact": (
-                        10 ** (-float(prob_artifact) / 10)
-                        if prob_artifact is not None and prob_artifact != float("inf")
-                        else 0.0
-                    ),
+                    "prob_present": phred_to_prob(prob_present),
+                    "prob_absent": phred_to_prob(prob_absent),
+                    "prob_artifact": phred_to_prob(prob_artifact),
                     "sample_afs": all_sample_afs_for_alt,
                     "af_mean": af_mean,
                     "af_max": af_max,
