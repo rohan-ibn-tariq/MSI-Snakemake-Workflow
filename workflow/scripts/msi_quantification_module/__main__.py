@@ -86,6 +86,13 @@ def parse_args():
         default=4,
         help="Number of threads for parallel processing",
     )
+    parser.add_argument(
+        "--imputation",
+        type=str,
+        choices=["uniform", "regression"],
+        default="regression",
+        help="Imputation method for missing probabilities: uniform (0.5) or regression (ML-based)"
+    )
 
     return parser.parse_args()
 
