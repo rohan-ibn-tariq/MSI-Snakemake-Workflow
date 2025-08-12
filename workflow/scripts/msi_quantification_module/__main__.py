@@ -19,7 +19,9 @@ from msi_quantification_module.core import (
     create_msi_quantification
 )
 from msi_quantification_module.debug import write_complete_debug_log, initialize_debug_log
+from msi_quantification_module.dp_analysis import prepare_variants_for_dp
 from msi_quantification_module.reports import generate_msi_html_report
+
 
 def validate_file(filepath, file_type=None):
     """
@@ -86,13 +88,6 @@ def parse_args():
         default=4,
         help="Number of threads for parallel processing",
     )
-    parser.add_argument(
-        "--imputation",
-        type=str,
-        choices=["uniform", "regression"],
-        default="regression",
-        help="Imputation method for missing probabilities: uniform (0.5) or regression (ML-based)"
-    )
 
     return parser.parse_args()
 
@@ -114,6 +109,27 @@ def main():
     results, total_regions_loaded, unprocessed_count, merged_count = (
         bin_based_threaded_intersection(variants, regions, args.threads)
     )
+
+    print("Preparing variants for DP analysis...")
+    dp_result = prepare_variants_for_dp(results)
+    # print(f"[DP-TEST] {dp_result}")
+
+    dp_output_file = "../../debug/k/dp_results_temp.json"
+    with open(dp_output_file, "w") as f:
+        json.dump(dp_result, f, indent=2, default=str)
+    print(f"DP results saved to: {dp_output_file}")
+
+    # Quick console summary
+    if "error" not in dp_result:
+        print(f"\n✅ DP SUCCESS:")
+        print(f"  Variants processed: {dp_result['total_variants']}")
+        print(f"  Regions processed: {dp_result['total_regions']}")
+        print(f"  Samples found: {dp_result['samples']}")
+        print(f"  AF thresholds: {dp_result['af_thresholds']}")
+        print(f"  Ready for DP algorithms: {dp_result['ready_for_dp']}")
+    else:
+        print(f"❌ DP ERROR: {dp_result}")
+
 
     output_data = {
         "analysis_info": {
