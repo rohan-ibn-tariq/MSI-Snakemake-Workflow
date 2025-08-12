@@ -307,3 +307,106 @@ def calculate_p_unstable(distribution):
     """Calculate probability of instability: P(≥1 MSI variant)."""
     return 1.0 - distribution[0]
 
+
+def propagate_uncertainties(uncertainties):
+    """Standard statistical uncertainty propagation."""
+    if not uncertainties:
+        return 0.0
+    return (sum(u**2 for u in uncertainties))**0.5
+
+
+def classify_msi_status(msi_score, msi_high_threshold=3.5):
+    """Classify MSI status using MSIsensor standard."""
+    return "MSI-High" if msi_score >= msi_high_threshold else "MSS"
+
+
+def run_regional_msi_analysis(dp_ready_data, unstable_threshold=0.5, msi_high_threshold=3.5):
+    """
+    Regional MSI analysis using DP method.
+        
+    Args:
+        dp_ready_data: Output from prepare_variants_for_dp()
+        unstable_threshold: P(≥1 MSI) threshold for unstable classification
+        msi_high_threshold: MSI score threshold for MSI-High classification
+        
+    Returns:
+        dict: Single MSI analysis result
+    """
+    
+    print("[REGIONAL-DP] Starting regional MSI analysis")
+    
+    total_regions = len(dp_ready_data["regions"])
+    unstable_count = 0
+    region_uncertainties = []
+    regions_with_variants = 0
+    
+    for region_id, variants in dp_ready_data["regions"].items():
+        if variants:  # Region has variants
+            regions_with_variants += 1
+            
+            distribution = run_msi_dp(variants)
+            p_unstable = calculate_p_unstable(distribution)
+            uncertainty = calculate_std_dev(distribution)
+            
+            region_uncertainties.append(uncertainty)
+            
+            if p_unstable > unstable_threshold:
+                unstable_count += 1
+        
+    
+    msi_score = (unstable_count / total_regions) * 100 if total_regions > 0 else 0.0
+    overall_uncertainty = propagate_uncertainties(region_uncertainties)
+    msi_status = classify_msi_status(msi_score, msi_high_threshold)
+    
+    print(f"[REGIONAL-DP] Results: {unstable_count}/{total_regions} unstable regions")
+    print(f"[REGIONAL-DP] MSI Score: {msi_score:.1f}% ± {overall_uncertainty:.2f}")
+    print(f"[REGIONAL-DP] MSI Status: {msi_status}")
+    
+    return {
+        "msi_score": round(msi_score, 1),
+        "msi_uncertainty": round(overall_uncertainty, 2),
+        "msi_status": msi_status,
+        "unstable_regions": unstable_count,
+        "total_regions": total_regions,
+        "regions_with_variants": regions_with_variants
+    }
+
+
+def test_simplified_regional():
+    """Quick test of simplified regional analysis."""
+    print("\n" + "="*50)
+    print("TESTING SIMPLIFIED REGIONAL ANALYSIS")
+    print("="*50)
+    
+    mock_data = {
+        "samples": ["tumor", "normal"],
+        "regions": {
+            "chr1:1000-1020": [
+                {"dp_data": {"p_present": 0.8, "p_absent": 0.2}},
+                {"dp_data": {"p_present": 0.6, "p_absent": 0.4}}
+            ],
+            "chr1:2000-2020": [
+                {"dp_data": {"p_present": 0.3, "p_absent": 0.7}}
+            ],
+            "chr1:3000-3030": [],
+            "chr1:4000-4040": [
+                {"dp_data": {"p_present": 0.9, "p_absent": 0.1}}
+            ]
+        }
+    }
+    
+    result = run_regional_msi_analysis(mock_data)
+    
+    print(f"\nSINGLE RESULT (applies to all samples):")
+    print(f"  MSI Score: {result['msi_score']}% ± {result['msi_uncertainty']}")
+    print(f"  MSI Status: {result['msi_status']}")
+    print(f"  Unstable Regions: {result['unstable_regions']}/{result['total_regions']}")
+    print(f"  Regions with Variants: {result['regions_with_variants']}")
+    
+    print("\n" + "="*50)
+    print("SIMPLIFIED REGIONAL TESTING COMPLETE")
+    print("="*50)
+
+
+if __name__ == "__main__":
+    test_simplified_regional()

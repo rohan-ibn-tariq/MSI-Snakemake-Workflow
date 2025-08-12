@@ -19,7 +19,10 @@ from msi_quantification_module.core import (
     create_msi_quantification
 )
 from msi_quantification_module.debug import write_complete_debug_log, initialize_debug_log
-from msi_quantification_module.dp_analysis import prepare_variants_for_dp
+from msi_quantification_module.dp_analysis import ( 
+    prepare_variants_for_dp,
+    run_regional_msi_analysis,
+)
 from msi_quantification_module.reports import generate_msi_html_report
 
 
@@ -88,6 +91,18 @@ def parse_args():
         default=4,
         help="Number of threads for parallel processing",
     )
+    parser.add_argument(
+        "--unstable-threshold",
+        type=float,
+        default=0.5,
+        help="P(≥1 MSI) threshold for calling region unstable (default: 0.5)"
+    )
+    parser.add_argument(
+        "--msi-high-threshold", 
+        type=float,
+        default=3.5,
+        help="MSI score threshold for MSI-High classification (default: 3.5 - MSIsensor standard)"
+    )
 
     return parser.parse_args()
 
@@ -112,7 +127,30 @@ def main():
 
     print("Preparing variants for DP analysis...")
     dp_result = prepare_variants_for_dp(results)
-    # print(f"[DP-TEST] {dp_result}")
+
+    print("Running regional DP analysis...")
+
+    if "error" not in dp_result and dp_result.get("ready_for_dp"):
+        regional_results = run_regional_msi_analysis(
+            dp_result,
+            unstable_threshold=args.unstable_threshold,
+            msi_high_threshold=args.msi_high_threshold,
+        )
+    
+        print(f"\nREGIONAL DP RESULTS:")
+        print(f"  MSI Score: {regional_results['msi_score']}% ± {regional_results['msi_uncertainty']}")
+        print(f"  MSI Status: {regional_results['msi_status']}")
+        print(f"  Unstable Regions: {regional_results['unstable_regions']}/{regional_results['total_regions']}")
+        print(f"  Regions with Variants: {regional_results['regions_with_variants']}")
+    
+        # Save DP results to file
+        dp_regional_output = "../../debug/k/dp_regional_results.json"
+        with open(dp_regional_output, "w") as f:
+            json.dump(regional_results, f, indent=2)
+        print(f"Regional DP results saved to: {dp_regional_output}")
+    else:
+        print("Cannot run regional DP - data preparation failed")
+
 
     dp_output_file = "../../debug/k/dp_results_temp.json"
     with open(dp_output_file, "w") as f:
@@ -121,14 +159,14 @@ def main():
 
     # Quick console summary
     if "error" not in dp_result:
-        print(f"\n✅ DP SUCCESS:")
+        print(f"\n DP SUCCESS:")
         print(f"  Variants processed: {dp_result['total_variants']}")
         print(f"  Regions processed: {dp_result['total_regions']}")
         print(f"  Samples found: {dp_result['samples']}")
         print(f"  AF thresholds: {dp_result['af_thresholds']}")
         print(f"  Ready for DP algorithms: {dp_result['ready_for_dp']}")
     else:
-        print(f"❌ DP ERROR: {dp_result}")
+        print(f" DP ERROR: {dp_result}")
 
 
     output_data = {
