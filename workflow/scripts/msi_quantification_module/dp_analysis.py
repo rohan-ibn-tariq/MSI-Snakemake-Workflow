@@ -241,3 +241,69 @@ def prepare_variants_for_dp(results, imputation_method="uniform"):
     print("[DP-ENTRY] Data Preparation for DP complete")
 
     return dp_ready
+
+
+def run_msi_dp(variants_with_probabilities):
+    """    
+    Matrix m: n variants (columns) × n+1 possible MSI counts (rows)
+    m[i,k] = P(exactly i MSI variants using first k variants)
+    
+    Args:
+        variants_with_probabilities: List of variants with dp_data containing
+            p_present and p_absent probabilities
+    
+    Returns:
+        List: [P(0 MSI), P(1 MSI), P(2 MSI), ..., P(n MSI)]
+    """
+    n = len(variants_with_probabilities)
+    
+    if n == 0:
+        return [1.0]
+    
+    prev_col = [0.0] * (n + 1)
+    
+    p_absent_0 = variants_with_probabilities[0]["dp_data"]["p_absent"]
+    p_present_0 = variants_with_probabilities[0]["dp_data"]["p_present"]
+    
+    prev_col[0] = p_absent_0
+    prev_col[1] = p_present_0
+    
+    for k in range(1, n):
+        p_absent_k = variants_with_probabilities[k]["dp_data"]["p_absent"]
+        p_present_k = variants_with_probabilities[k]["dp_data"]["p_present"]
+        
+        curr_col = [0.0] * (n + 1)
+        
+        # Base case: P(0 MSI) = previous P(0 MSI) × variant absent
+        curr_col[0] = prev_col[0] * p_absent_k
+        
+        # Recurrence: Formula for rows 1 to k+1
+        # m[i,k] = m[i,k-1] × p_absent + m[i-1,k-1] × p_present
+        for i in range(1, k + 2):
+            curr_col[i] = prev_col[i] * p_absent_k + prev_col[i-1] * p_present_k
+        
+        prev_col = curr_col
+    
+    return prev_col
+
+
+def calculate_expected_value(distribution):
+    """
+    Calculate expected number of MSI variants from probability distribution.
+    """
+    return sum(i * prob for i, prob in enumerate(distribution))
+
+
+def calculate_std_dev(distribution):
+    """
+    Calculate standard deviation (uncertainty) from probability distribution.
+    """
+    expected = calculate_expected_value(distribution)
+    variance = sum((i - expected)**2 * prob for i, prob in enumerate(distribution))
+    return variance**0.5
+
+
+def calculate_p_unstable(distribution):
+    """Calculate probability of instability: P(≥1 MSI variant)."""
+    return 1.0 - distribution[0]
+
