@@ -8,8 +8,6 @@ from collections import defaultdict
 
 import pysam
 from binning import assign_bin
-from scipy.stats import chisquare
-from scipy.stats import false_discovery_control
 
 from msi_quantification_module.utils import phred_to_prob
 
@@ -51,6 +49,7 @@ def load_bed_regions(bed_file):
     Parse motif information and calculate buffer sizes.
     """
     regions = defaultdict(lambda: defaultdict(list))
+    total_regions_count = 0
 
     print(f"[MSI-ANALYSIS INFO] Loading BED regions from: {bed_file}")
 
@@ -116,21 +115,17 @@ def load_bed_regions(bed_file):
                 }
 
                 regions[normalized_chrom][bin_id].append((region_id, region_data))
+                total_regions_count += 1
 
             except (ValueError, IndexError) as e:
                 print(f"[MSI-ANALYSIS WARNING] Error parsing line {line_num}: {e}")
                 continue
 
-    if not regions:
+    if total_regions_count == 0:
         raise ValueError(f"[MSI-ANALYSIS ERROR] No valid regions found in {bed_file}")
 
-    total_regions = sum(
-        len(bin_regions)
-        for chrom_bins in regions.values()
-        for bin_regions in chrom_bins.values()
-    )
-    print(f"[MSI-ANALYSIS INFO] Loaded {total_regions} microsatellite regions")
-    return regions
+    print(f"[MSI-ANALYSIS INFO] Loaded {total_regions_count} microsatellite regions")
+    return regions, total_regions_count
 
 
 def is_perfect_repeat(sequence, motif):
@@ -293,195 +288,6 @@ def analyze_variant_in_region(variant_data, region_data):
 #         "af_mean": variant_data["af_mean"],
 #         "af_max": variant_data["af_max"],
 #     }
-
-
-def calculate_chi_squared_for_perfect_variants(region, perfect_variants):
-    """
-    Calculate chi-squared test for MSI instability at a single region
-    """
-    ref_length = region["reference_length"]
-
-    observed = {}
-    for variant in perfect_variants:
-        alt_length = ref_length + variant["svlen"]
-        observed[alt_length] = observed.get(alt_length, 0) + 1
-
-    if ref_length not in observed:
-        observed[ref_length] = 0
-
-    all_lengths = sorted(observed.keys())
-    total = sum(observed.values())
-
-    observed_counts = [observed[l] + 0.5 for l in all_lengths]
-
-    expected_counts = []
-    for l in all_lengths:
-        if l == ref_length:
-            expected_counts.append(total + 0.5)
-        else:
-            expected_counts.append(0.5)
-
-    chi2_stat, p_value = chisquare(f_obs=observed_counts, f_exp=expected_counts)
-
-    return chi2_stat, p_value
-
-
-# def add_chi_squared_classification(results):
-#     """
-#     Add chi-squared MSI classification to existing results
-#     """
-#     unstable_regions = 0
-#     testable_regions = 0
-#     total_regions = len(results)
-
-#     for region in results:
-#         if region.get("num_perfect_repeats", 0) > 0:
-#             testable_regions += 1
-
-#             perfect_variants = [v for v in region["variants"]
-#                               if v["repeat_status"] == "perfect"]
-
-#             chi2_stat, p_value = calculate_chi_squared_for_perfect_variants(region, perfect_variants)
-
-#             ###DEBUG
-#             # ADD DEBUG PRINT
-#             if testable_regions <= 5:  # Print first 5 for debugging
-#                 print(f"Region {testable_regions}: chi2={chi2_stat:.3f}, p={p_value:.6f}, variants={len(perfect_variants)}")
-#             ###END
-
-#             region["is_unstable"] = p_value < 0.05
-#             region["chi2_stat"] = chi2_stat
-#             region["p_value"] = p_value
-
-#             if region["is_unstable"]:
-#                 unstable_regions += 1
-#         else:
-#             region["is_unstable"] = False
-#             region["chi2_stat"] = None
-#             region["p_value"] = None
-
-#     ###DEBUG
-
-#     # Count regions by p-value ranges
-#     p_ranges = {"< 0.001": 0, "0.001-0.01": 0, "0.01-0.05": 0, "> 0.05": 0}
-#     for region in results:
-#         if region.get("p_value") is not None:
-#             p = region["p_value"]
-#             if p < 0.001:
-#                 p_ranges["< 0.001"] += 1
-#             elif p < 0.01:
-#                 p_ranges["0.001-0.01"] += 1
-#             elif p < 0.05:
-#                 p_ranges["0.01-0.05"] += 1
-#             else:
-#                 p_ranges["> 0.05"] += 1
-
-#     print("P-value distribution:", p_ranges)
-#     ###END
-#     msi_score = (unstable_regions / total_regions) * 100 if total_regions > 0 else 0
-
-#     if msi_score >= 3.5:
-#         msi_status = "MSI-High"
-#     else:
-#         msi_status = "MSS"
-
-#     return {
-#         "msi_score": msi_score,
-#         "msi_status": msi_status,
-#         "unstable_regions": unstable_regions,
-#         "testable_regions": testable_regions,
-#         "total_regions": total_regions,
-#         "threshold_used": 3.5
-#     }
-
-
-def add_chi_squared_classification(results):
-    """
-    Add chi-squared MSI classification with FDR correction
-    """
-    testable_regions = 0
-    total_regions = len(results)
-
-    p_values = []
-    regions_with_tests = []
-
-    for region in results:
-        if region.get("num_perfect_repeats", 0) > 0:
-            testable_regions += 1
-
-            perfect_variants = [
-                v for v in region["variants"] if v["repeat_status"] == "perfect"
-            ]
-
-            chi2_stat, p_value = calculate_chi_squared_for_perfect_variants(
-                region, perfect_variants
-            )
-
-            region["chi2_stat"] = chi2_stat
-            region["p_value"] = p_value
-
-            p_values.append(p_value)
-            regions_with_tests.append(region)
-        else:
-            region["is_unstable"] = False
-            region["chi2_stat"] = None
-            region["p_value"] = None
-
-    ###DEBUG START
-    print(f"Total testable regions: {testable_regions}")
-    print(f"P-values collected: {len(p_values)}")
-    if p_values:
-        print(f"Original p-values (first 10): {p_values[:10]}")
-        print(f"Min original p-value: {min(p_values)}")
-        print(f"Max original p-value: {max(p_values)}")
-        print(f"Unique p-values: {len(set(p_values))}")
-    ###DEBUG END
-
-    # Apply FDR correction (Benjamini-Hochberg)
-    unstable_regions = 0
-    if p_values:
-        corrected_p_values = false_discovery_control(p_values, method="bh")
-
-        ###DEBUG START
-        print(f"Corrected p-values (first 10): {corrected_p_values[:10]}")
-        print(f"Min corrected p-value: {min(corrected_p_values)}")
-        print(f"Max corrected p-value: {max(corrected_p_values)}")
-
-        significant_001 = sum(1 for p in corrected_p_values if p < 0.01)
-        significant_005 = sum(1 for p in corrected_p_values if p < 0.05)
-        significant_010 = sum(1 for p in corrected_p_values if p < 0.10)
-
-        print(f"Corrected p-values < 0.01: {significant_001}")
-        print(f"Corrected p-values < 0.05: {significant_005}")
-        print(f"Corrected p-values < 0.10: {significant_010}")
-        ###DEBUG END
-
-        for i, region in enumerate(regions_with_tests):
-            region["p_value_corrected"] = corrected_p_values[i]
-            region["is_unstable"] = corrected_p_values[i] < 0.05
-
-            if region["is_unstable"]:
-                unstable_regions += 1
-
-    ###DEBUG START
-    print(f"Final unstable regions: {unstable_regions}")
-    ###DEBUG END
-
-    msi_score = (unstable_regions / total_regions) * 100 if total_regions > 0 else 0
-
-    if msi_score >= 3.5:
-        msi_status = "MSI-High"
-    else:
-        msi_status = "MSS"
-
-    return {
-        "msi_score": msi_score,
-        "msi_status": msi_status,
-        "unstable_regions": unstable_regions,
-        "testable_regions": testable_regions,
-        "total_regions": total_regions,
-        "threshold_used": 3.5,
-    }
 
 
 def load_vcf_variants(vcf_file):
@@ -886,9 +692,6 @@ def create_msi_quantification(results):
         else:
             motif_summary[motif_type]["stable"] += 1
 
-    msi_classification = add_chi_squared_classification(results)
-    print(msi_classification)
-
     return {
         "data_scope": {
             "total_ms_regions": len(results),
@@ -929,5 +732,4 @@ def create_msi_quantification(results):
             "note": "AF values from perfect MSI variants only",
         },
         "motif_breakdown": motif_summary,
-        "msi_classification": msi_classification,
     }

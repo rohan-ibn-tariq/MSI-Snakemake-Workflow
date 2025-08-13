@@ -118,7 +118,10 @@ def main():
     variants, filter_stats = load_vcf_variants(args.vcf)
 
     print("Loading BED regions...")
-    regions = load_bed_regions(args.bed)
+    regions, total_ms_regions = load_bed_regions(args.bed)
+   
+    print(f"Total MS regions from BED: {total_ms_regions:,}")
+
 
     print(f"Running intersection analysis with {args.threads} threads...")
     results, total_regions_loaded, unprocessed_count, merged_count = (
@@ -133,41 +136,13 @@ def main():
     if "error" not in dp_result and dp_result.get("ready_for_dp"):
         regional_results = run_regional_msi_analysis(
             dp_result,
+            total_ms_regions,
             unstable_threshold=args.unstable_threshold,
             msi_high_threshold=args.msi_high_threshold,
         )
-    
-        print(f"\nREGIONAL DP RESULTS:")
-        print(f"  MSI Score: {regional_results['msi_score']}% ± {regional_results['msi_uncertainty']}")
-        print(f"  MSI Status: {regional_results['msi_status']}")
-        print(f"  Unstable Regions: {regional_results['unstable_regions']}/{regional_results['total_regions']}")
-        print(f"  Regions with Variants: {regional_results['regions_with_variants']}")
-    
-        # Save DP results to file
-        dp_regional_output = "../../debug/k/dp_regional_results.json"
-        with open(dp_regional_output, "w") as f:
-            json.dump(regional_results, f, indent=2)
-        print(f"Regional DP results saved to: {dp_regional_output}")
     else:
         print("Cannot run regional DP - data preparation failed")
-
-
-    dp_output_file = "../../debug/k/dp_results_temp.json"
-    with open(dp_output_file, "w") as f:
-        json.dump(dp_result, f, indent=2, default=str)
-    print(f"DP results saved to: {dp_output_file}")
-
-    # Quick console summary
-    if "error" not in dp_result:
-        print(f"\n DP SUCCESS:")
-        print(f"  Variants processed: {dp_result['total_variants']}")
-        print(f"  Regions processed: {dp_result['total_regions']}")
-        print(f"  Samples found: {dp_result['samples']}")
-        print(f"  AF thresholds: {dp_result['af_thresholds']}")
-        print(f"  Ready for DP algorithms: {dp_result['ready_for_dp']}")
-    else:
-        print(f" DP ERROR: {dp_result}")
-
+    #TODO: FIX THE UNCERTAINY CALCULATION for EXPECTED MSI COUNT... that is wrong 45+-
 
     output_data = {
         "analysis_info": {
@@ -176,7 +151,8 @@ def main():
             "bed_file": args.bed,
             "threads_used": args.threads,
         },
-        "region_results": results,
+        # "region_results": results,
+        "region_results": dp_result,
     }
 
     with open(args.output, "w") as f:
@@ -194,6 +170,7 @@ def main():
         filter_stats,
         unprocessed_count,
         merged_count,
+        {"regional_analysis": regional_results},
     )
 
     msi_data = create_msi_quantification(results)

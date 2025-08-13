@@ -267,6 +267,47 @@ def print_msi_summary(msi_data):
     print("=" * 60)
 
 
+def debug_dp_analysis_results(debug_file, dp_data):
+    """Debug section for DP-based MSI analysis results."""
+    
+    debug_file.write("\n" + "="*80 + "\n")
+    debug_file.write("6. DP-BASED MSI ANALYSIS RESULTS\n")
+    debug_file.write("="*80 + "\n")
+    
+    regional = dp_data.get("regional_analysis", {})
+    if regional:
+        debug_file.write("\nREGIONAL MSI ANALYSIS (DP Method):\n")
+        debug_file.write(f"  MSI Score: {regional.get('msi_score', 'N/A')}% ± {regional.get('msi_uncertainty', 'N/A')}%\n")
+        debug_file.write(f"  MSI Status: {regional.get('msi_status', 'N/A')}\n")
+        debug_file.write(f"  Unstable Regions: {regional.get('unstable_regions', 0):,}\n")
+        debug_file.write(f"  Total MS Regions: {regional.get('total_regions', 0):,}\n")
+        debug_file.write(f"  Regions with Variants: {regional.get('regions_with_variants', 0):,}\n")
+        debug_file.write(f"  Regions without Variants: {regional.get('regions_without_variants', 0):,}\n")
+        debug_file.write(f"  Expected Unstable Regions: {regional.get('expected_unstable_regions', 'N/A')} ± {regional.get('expected_unstable_uncertainty', 'N/A')}\n")
+        debug_file.write(f"  Expected MSI Variants: {regional.get('expected_msi_variants', 'N/A')} ± {regional.get('expected_variants_uncertainty', 'N/A')}\n")
+
+
+        total_regions_value = regional.get('total_regions', 0)
+        regions_with_variants = regional.get('regions_with_variants', 0)
+        
+        if total_regions_value > 0:
+            coverage = (regions_with_variants / total_regions_value) * 100
+            debug_file.write(f"  Analysis Coverage: {coverage:.1f}%\n")
+        else:
+            debug_file.write(f"  Analysis Coverage: ERROR - total_regions = {total_regions_value}\n")
+        debug_file.write("\n")
+    
+    af_evolution = dp_data.get("af_evolution", {})
+    if af_evolution:
+        debug_file.write("\nAF EVOLUTION TIMELINE:\n")
+        for af_key in sorted(af_evolution.keys()):
+            af_data = af_evolution[af_key]
+            debug_file.write(f"  {af_key}: {af_data.get('msi_score', 'N/A')}%")
+            if 'msi_uncertainty' in af_data:
+                debug_file.write(f" ± {af_data['msi_uncertainty']}%")
+            debug_file.write("\n")
+
+
 def write_complete_debug_log(
     debug_file_path,
     variants,
@@ -277,6 +318,7 @@ def write_complete_debug_log(
     filter_stats,
     unprocessed_count,
     merged_count,
+    dp_results=None,
 ):
     """Master debug function - handles header and all debug sections"""
 
@@ -452,3 +494,6 @@ def write_complete_debug_log(
         debug_numerical_reconciliation(debug_file, reconciliation_data)
         debug_msi_analysis_results(debug_file, msi_analysis_data)
         debug_quantification_summary(debug_file, quantification_data)
+        if dp_results:
+            debug_dp_analysis_results(debug_file, dp_results)
+
