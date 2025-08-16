@@ -129,20 +129,24 @@ def main():
     )
 
     print("Preparing variants for DP analysis...")
-    dp_result = prepare_variants_for_dp(results)
+    dp_result = prepare_variants_for_dp(results, args.vcf)
 
     print("Running regional DP analysis...")
-
+    uncertain_regions_count = len([
+        r for r in results 
+        if r.get("has_variants") == True and r.get("num_perfect_repeats", 0) == 0
+    ])
+    
     if "error" not in dp_result and dp_result.get("ready_for_dp"):
         regional_results = run_regional_msi_analysis(
             dp_result,
             total_ms_regions,
+            uncertain_regions_count,
             unstable_threshold=args.unstable_threshold,
             msi_high_threshold=args.msi_high_threshold,
         )
     else:
         print("Cannot run regional DP - data preparation failed")
-    #TODO: FIX THE UNCERTAINY CALCULATION for EXPECTED MSI COUNT... that is wrong 45+-
 
     output_data = {
         "analysis_info": {
