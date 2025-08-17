@@ -13,20 +13,24 @@ from typing import Dict, List, Optional, Tuple, Union
 import pysam
 
 
+#####################################################################################
+################## DATA QUALITY VALIDATION & IMPUTATION FUNCTIONS ###################
+#####################################################################################
+
 def validate_probabilities(
     pp: Optional[float], pa: Optional[float], art: Optional[float]
 ) -> Tuple[bool, List[str]]:
     """
     Validate probability values for present, absent, and artifact states.
-    
+
     Args:
         pp: Probability present (0-1 or None)
-        pa: Probability absent (0-1 or None) 
+        pa: Probability absent (0-1 or None)
         art: Probability artifact (0-1 or None)
-        
+
     Returns:
         Tuple of (is_valid, error_list)
-        
+
     Note:
         Uses 0.005 tolerance for floating-point precision in PHRED-to-probability conversion.
     """
@@ -49,20 +53,33 @@ def validate_probabilities(
     return len(errors) == 0, errors
 
 
-def validate_af_value(af_value, sample_name):
-    """Validate and normalize AF value for a specific sample."""
+def validate_af_value(
+    af_value: Union[float, int, str, None], sample_name: str
+) -> Tuple[Union[float, int], List[str]]:
+    """
+    Validate and normalize AF value for a specific sample.
+
+    Args:
+        af_value: Allele frequency value from VCF (float, int, str, or None)
+        sample_name: Sample identifier for error reporting
+
+    Returns:
+        Tuple of (normalized_af, error_list)
+        - normalized_af: float (0.0-1.0), -1 (missing), or -2 (invalid)
+        - error_list: List of validation errors
+    """
     if af_value is None:
-        return -1, []
+        return -1, []  # Missing/null AF (biological uncertainty)
 
     try:
         af_float = float(af_value)
         if af_float < 0:
-            return -2, [f"{sample_name}_negative_af_{af_float}"]
+            return -2, [f"{sample_name}_negative_af_{af_float}"]  # Invalid data
         if af_float > 1.0:
-            return -2, [f"{sample_name}_af_exceeds_1.0_{af_float}"]
+            return -2, [f"{sample_name}_af_exceeds_1.0_{af_float}"]  # Invalid data
         return af_float, []
-    except:
-        return -2, [f"{sample_name}_invalid_af_type"]
+    except (ValueError, TypeError):
+        return -2, [f"{sample_name}_invalid_af_type"]  # Invalid data
 
 
 def apply_4_step_imputation_to_variant(variant):
