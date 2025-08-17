@@ -82,7 +82,7 @@ def validate_af_value(
         return -2, [f"{sample_name}_invalid_af_type"]  # Invalid data
 
 
-def apply_4_step_imputation_to_variant(variant):
+def apply_4_step_imputation_to_variant(variant: Dict) -> None:
     """Apply complete 4-step imputation with Johannes formula and full audit trail."""
 
     pp = variant.get("prob_present")
@@ -124,6 +124,7 @@ def apply_4_step_imputation_to_variant(variant):
         audit_trail["missing_fields"] = missing_fields
         missing_count = len(missing_fields)
 
+        # SECTION: All probabilities available - direct consolidation
         if missing_count == 0:
             p_present = pp
             p_absent = pa + art
@@ -132,6 +133,7 @@ def apply_4_step_imputation_to_variant(variant):
                 f"p_absent = prob_absent + prob_artifact = {pa} + {art} = {p_absent}, p_present = {p_present}"
             )
 
+        # SECTION: One missing - derive from constraint (sum = 1.0)  
         elif missing_count == 1:
             if pp is None:
                 derived = 1.0 - pa - art
@@ -160,6 +162,7 @@ def apply_4_step_imputation_to_variant(variant):
                     f"derived prob_artifact = 1.0 - {pp} - {pa} = {derived}, p_absent = {pa} + {derived} = {p_absent}"
                 )
 
+        # SECTION: All missing - uniform distribution
         elif missing_count == 3:
             p_present = 0.5
             p_absent = 0.5
@@ -168,6 +171,11 @@ def apply_4_step_imputation_to_variant(variant):
                 "all probabilities missing, applied uniform: present=0.5, absent=0.25, artifact=0.25, p_absent=0.5"
             )
 
+        # SECTION: Two missing - proportional split 
+        # f1: (pa + art + pp = 1.0)
+        # f2: (pa + art = p_absent)
+        # Assumed amputations: pp=0.5, pa=0.25, art=0.25
+        # Ratio is: pp:pa:art = 2:1:1
         else:
             known_value = pp if pp is not None else (pa if pa is not None else art)
             remaining = 1.0 - known_value
@@ -202,6 +210,7 @@ def apply_4_step_imputation_to_variant(variant):
                     f"remaining = {remaining}, absent = {remaining} * 0.5 = {imputed_absent}, artifact = {remaining} * 0.5 = {imputed_artifact}, p_absent = {imputed_absent} + {imputed_artifact} = {p_absent}"
                 )
 
+    # Process AF values for each sample with validation and audit tracking
     sample_afs = variant.get("sample_afs", {})
     af_by_sample = {}
 
@@ -225,11 +234,6 @@ def apply_4_step_imputation_to_variant(variant):
             audit_trail["af_processing"]["af_conversion"][
                 sample_name
             ] = f"{af_value} -> {normalized_af}"
-
-    if not af_by_sample:
-        af_by_sample["sample"] = -1
-        audit_trail["af_processing"]["missing_af_samples"].append("sample")
-        audit_trail["af_processing"]["af_conversion"]["sample"] = "no_af_data -> -1"
 
     variant["dp_data"] = {
         "p_present": p_present,
