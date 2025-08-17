@@ -281,6 +281,7 @@ def debug_dp_analysis_results(debug_file, dp_data):
         msi_range = regional.get('msi_score_range', [0, 0])
         debug_file.write(f"  MSI Score Range: {msi_range[0]:.2f}% - {msi_range[1]:.2f}% (methodological uncertainty)\n")
         debug_file.write(f"  Probabilistic MSI Score: {regional.get('msi_score', 'N/A'):.2f}% (P(≥1 MSI) > 0.5)\n")
+        debug_file.write(f"  MSI Score Statistical Uncertainty: ± {regional.get('msi_score_statistical_uncertainty', 'N/A'):.3f}%\n")
         debug_file.write(f"  Deterministic MSI Score: {regional.get('msi_score_deterministic', 'N/A'):.2f}% (regions with ≥1 variant)\n")
         debug_file.write(f"  Analysis Impact: {regional.get('analysis_impact', 'N/A'):.2f} percentage points\n")
         debug_file.write(f"  MSI Status (Probabilistic): {regional.get('msi_status', 'N/A')}\n")
@@ -298,6 +299,7 @@ def debug_dp_analysis_results(debug_file, dp_data):
         variants_range = regional.get('msi_variants_range', [0, 0])
         debug_file.write(f"  Expected MSI Variants Range: {variants_range[0]:.1f} - {variants_range[1]:.1f} (methodological uncertainty)\n")
         debug_file.write(f"  Probabilistic: {regional.get('expected_msi_variants', 'N/A'):.2f} ± {regional.get('expected_variants_uncertainty', 'N/A'):.2f}, Deterministic: {regional.get('deterministic_msi_variants', 'N/A')}, Impact: {regional.get('msi_variants_impact', 'N/A'):.1f}\n")
+        debug_file.write(f"      Expected Unstable Regions: {regional.get('expected_unstable_regions', 'N/A'):.2f} ± {regional.get('expected_unstable_uncertainty', 'N/A'):.2f}, Deterministic: {regional.get('regions_with_variants', 'N/A')}, Impact: {regional.get('expected_unstable_impact', 'N/A'):.2f}\n")
 
         total_regions_value = regional.get('total_regions', 0)
         regions_with_variants = regional.get('regions_with_variants', 0)

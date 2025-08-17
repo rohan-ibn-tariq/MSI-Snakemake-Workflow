@@ -22,9 +22,10 @@ from msi_quantification_module.debug import write_complete_debug_log, initialize
 from msi_quantification_module.dp_analysis import ( 
     prepare_variants_for_dp,
     run_regional_msi_analysis,
+    run_af_evolution_analysis,
 )
 from msi_quantification_module.reports import generate_msi_html_report
-
+from msi_quantification_module.dp_analysis import debug_af_filtering_discrepancy
 
 def validate_file(filepath, file_type=None):
     """
@@ -131,22 +132,39 @@ def main():
     print("Preparing variants for DP analysis...")
     dp_result = prepare_variants_for_dp(results, args.vcf)
 
-    print("Running regional DP analysis...")
-    uncertain_regions_count = len([
-        r for r in results 
-        if r.get("has_variants") == True and r.get("num_perfect_repeats", 0) == 0
-    ])
     
     if "error" not in dp_result and dp_result.get("ready_for_dp"):
+        print("Running regional DP analysis...")
+
         regional_results = run_regional_msi_analysis(
             dp_result,
             total_ms_regions,
-            uncertain_regions_count,
             unstable_threshold=args.unstable_threshold,
             msi_high_threshold=args.msi_high_threshold,
         )
+        
+        print("Running AF evolution analysis...")
+    
+        af_evolution_results = run_af_evolution_analysis(
+            dp_result,
+            total_ms_regions,
+            unstable_threshold=args.unstable_threshold,
+            msi_high_threshold=args.msi_high_threshold,
+        )
+
     else:
         print("Cannot run regional DP - data preparation failed")
+
+    import json
+    debug_output = {
+        "regional_results": regional_results,
+        "af_evolution_results": af_evolution_results
+    }
+    with open("temp_af_debug.json", "w") as f:
+        json.dump(debug_output, f, indent=2, default=str)
+    print("Debug output saved to: temp_af_debug.json")
+
+    debug_af_filtering_discrepancy(dp_result, total_ms_regions)
 
     output_data = {
         "analysis_info": {
@@ -157,6 +175,8 @@ def main():
         },
         # "region_results": results,
         "region_results": dp_result,
+        "regional_analysis": regional_results,
+        "af_evolution_results": af_evolution_results,
     }
 
     with open(args.output, "w") as f:
