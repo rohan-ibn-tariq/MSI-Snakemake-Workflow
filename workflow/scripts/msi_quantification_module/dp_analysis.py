@@ -1,13 +1,34 @@
 """
 MSI Quantification Module - Dynamic Programming Analysis
+
+Implements probabilistic MSI analysis using dynamic programming approach.
+Outputs:
+1. Genome Wide Regional MSI Analysis
+2. Sample Clustered Genome-Wide AF Evolution Analysis
+Provides uncertainty quantification for MSI scores, unstable regions, and variants.
 """
+
+from typing import Dict, List, Optional, Tuple, Union
 
 import pysam
 
 
-def validate_probabilities(pp, pa, art):
+def validate_probabilities(
+    pp: Optional[float], pa: Optional[float], art: Optional[float]
+) -> Tuple[bool, List[str]]:
     """
-    Validate individual probability values upfront before processing.
+    Validate probability values for present, absent, and artifact states.
+    
+    Args:
+        pp: Probability present (0-1 or None)
+        pa: Probability absent (0-1 or None) 
+        art: Probability artifact (0-1 or None)
+        
+    Returns:
+        Tuple of (is_valid, error_list)
+        
+    Note:
+        Uses 0.005 tolerance for floating-point precision in PHRED-to-probability conversion.
     """
     errors = []
 
