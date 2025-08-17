@@ -12,7 +12,10 @@ import polars as pl
 
 alt.data_transformers.disable_max_rows()
 
-def generate_msi_html_report(msi_data, output_path):
+
+def generate_msi_html_report(
+    regional_results, af_evolution_results, msi_data, output_path
+):
     """
     Generate MSI quantification HTML report.
     """
@@ -22,6 +25,10 @@ def generate_msi_html_report(msi_data, output_path):
     indel_histogram = create_indel_histogram(msi_data)
     af_distribution = create_af_distribution_chart(msi_data)
     motif_breakdown_chart = create_motif_breakdown_chart(msi_data)
+
+    # MSI Regional Analysis Charts & Summary Table
+    regional_uncertainty_chart = create_msi_score_uncertainty_chart(regional_results)
+    regional_breakdown_chart = create_region_count_breakdown_chart(regional_results)
 
     scope = msi_data["data_scope"]
     overview = msi_data["overview"]
@@ -63,7 +70,7 @@ def generate_msi_html_report(msi_data, output_path):
             font-weight: normal;
             margin-top: 40px;
             margin-bottom: 15px;
-            border-bottom: 1px solid #666;
+            # border-bottom: 1px solid #666;
         }}
         .header-info {{
             text-align: center;
@@ -130,6 +137,27 @@ def generate_msi_html_report(msi_data, output_path):
             font-style: italic;
             color: #666;
         }}
+        .regional-dashboard {{
+            margin: 40px 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+        }}
+        
+        .regional-charts {{
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+        }}
+        
+        .regional-chart-container {{
+            text-align: center;
+            background-color: white;
+            padding: 15px;
+            border: 1px solid #ccc;
+        }}
+
     </style>
 </head>
 <body>
@@ -138,6 +166,30 @@ def generate_msi_html_report(msi_data, output_path):
     <div class="header-info">
         Microsatellite Instability Quantification Analysis<br>
         Generated {timestamp}
+    </div>
+
+    <!-- Regional MSI Analysis Dashboard -->
+    <div class="regional-dashboard">
+        <h2 style="color: #8b4513; font-weight: bold; font-size: 20px; margin: 40px 0 25px 0; text-align: left;">
+            Complete Genome-Wide Analysis
+        </h2>
+        
+        <div class="regional-charts">
+            <div class="regional-chart-container">
+                <div id="regional-uncertainty-chart"></div>
+            </div>
+            <div class="regional-chart-container">
+                <div id="regional-breakdown-chart"></div>
+            </div>
+            <div class="regional-chart-container">
+                <div id="regional-status-chart"></div>
+            </div>
+        </div>
+        
+        <!-- Regional analysis Summary Table -->
+        <div class="regional-table-placeholder">
+            <p><em>Regional analysis table coming next...</em></p>
+        </div>
     </div>
 
     <div class="metrics">
@@ -272,6 +324,11 @@ def generate_msi_html_report(msi_data, output_path):
         vegaEmbed('#indel-histogram', {indel_histogram.to_json()}, {{actions: false}});
         vegaEmbed('#af-chart', {af_distribution.to_json()}, {{actions: false}});
         vegaEmbed('#motif-chart', {motif_breakdown_chart.to_json()}, {{actions: false}});
+        
+        // Regional MSI Analysis Charts
+        vegaEmbed('#regional-uncertainty-chart', {regional_uncertainty_chart.to_json()}, {{actions: false}});
+        vegaEmbed('#regional-breakdown-chart', {regional_breakdown_chart.to_json()}, {{actions: false}});  // ADD THIS LINE
+
     </script>
 </body>
 </html>
@@ -467,3 +524,176 @@ def create_motif_breakdown_chart(msi_data):
     )
 
     return chart
+
+
+def create_msi_score_uncertainty_chart(regional_results):
+    """3-bar MSI chart with tooltips - probabilistic, expected, deterministic"""
+
+    try:
+        threshold_score = regional_results.get("msi_score", 0.0) or 0.0
+        threshold_uncertainty = (
+            regional_results.get("msi_score_statistical_uncertainty", 0.0) or 0.0
+        )
+        deterministic_score = (
+            regional_results.get("msi_score_deterministic", 0.0) or 0.0
+        )
+        expected_score = regional_results.get("msi_score_expected", None)
+        expected_uncertainty = regional_results.get(
+            "msi_score_expected_uncertainty", None
+        )
+    except (TypeError, KeyError, AttributeError):
+        threshold_score = 0.0
+        threshold_uncertainty = 0.0
+        deterministic_score = 0.0
+        expected_score = None
+        expected_uncertainty = None
+
+    chart_data = [
+        {
+            "Method": "Probabilistic",
+            "Score": threshold_score,
+            "Uncertainty": (
+                f"±{threshold_uncertainty:.3f}%"
+                if threshold_uncertainty > 0
+                else "±0.000%"
+            ),
+            "Color": "#8b4513",
+        },
+        {
+            "Method": "Expected",
+            "Score": expected_score if expected_score is not None else 0.0,
+            "Uncertainty": (
+                f"±{expected_uncertainty:.3f}%" if expected_uncertainty else "Pending"
+            ),
+            "Color": "#daa520" if expected_score is not None else "#cccccc",
+        },
+        {
+            "Method": "Deterministic",
+            "Score": deterministic_score,
+            "Uncertainty": "±0.000%",
+            "Color": "#2f4f4f",
+        },
+    ]
+
+    try:
+        chart = (
+            alt.Chart(pl.DataFrame(chart_data))
+            .mark_bar(width=50)
+            .encode(
+                x=alt.X("Method:N", title="Analysis Method"),
+                y=alt.Y("Score:Q", title="MSI Score (%)"),
+                color=alt.Color(field="Color", type="nominal", scale=None),
+                tooltip=[
+                    alt.Tooltip("Method:N", title="Method"),
+                    alt.Tooltip("Score:Q", title="MSI Score (%)", format=".2f"),
+                    alt.Tooltip("Uncertainty:N", title="Uncertainty"),
+                ],
+            )
+            .properties(width=200, height=150, title="MSI Score Comparison")
+        )
+        return chart
+    except Exception:
+        return alt.Chart(pl.DataFrame([{"x": 0, "y": 0}])).mark_text(text="Chart Error")
+
+
+def create_region_count_breakdown_chart(regional_results):
+    """
+    Region count breakdown
+    """
+
+    try:
+        prob_unstable = regional_results.get("unstable_regions", 0) or 0
+        prob_stable = regional_results.get("probabilistic_stable_regions", 0) or 0
+
+        det_unstable = regional_results.get("regions_with_variants", 0) or 0
+        det_stable = regional_results.get("deterministic_stable_regions", 0) or 0
+
+        exp_unstable = regional_results.get("expected_unstable_regions", 0) or 0
+        uncertain = regional_results.get("uncertain_regions", 0) or 0
+
+        total_regions = regional_results.get("total_regions", 0) or 0
+        exp_stable = max(0, total_regions - exp_unstable - uncertain)
+
+    except (TypeError, KeyError, AttributeError):
+        prob_unstable = prob_stable = det_unstable = det_stable = exp_unstable = (
+            exp_stable
+        ) = uncertain = 0
+
+    chart_data = [
+        {
+            "Method": "Probabilistic",
+            "Type": "Unstable",
+            "Count": prob_unstable,
+            "Color": "#8b4513",
+        },
+        {
+            "Method": "Probabilistic",
+            "Type": "Stable",
+            "Count": prob_stable,
+            "Color": "#2f4f4f",
+        },
+        {
+            "Method": "Probabilistic",
+            "Type": "Uncertain",
+            "Count": uncertain,
+            "Color": "#daa520",
+        },
+        {
+            "Method": "Expected",
+            "Type": "Unstable",
+            "Count": exp_unstable,
+            "Color": "#8b4513",
+        },
+        {
+            "Method": "Expected",
+            "Type": "Stable",
+            "Count": exp_stable,
+            "Color": "#2f4f4f",
+        },
+        {
+            "Method": "Expected",
+            "Type": "Uncertain",
+            "Count": uncertain,
+            "Color": "#daa520",
+        },
+        {
+            "Method": "Deterministic",
+            "Type": "Unstable",
+            "Count": det_unstable,
+            "Color": "#8b4513",
+        },
+        {
+            "Method": "Deterministic",
+            "Type": "Stable",
+            "Count": det_stable,
+            "Color": "#2f4f4f",
+        },
+        {
+            "Method": "Deterministic",
+            "Type": "Uncertain",
+            "Count": uncertain,
+            "Color": "#daa520",
+        },
+    ]
+
+    try:
+        chart = (
+            alt.Chart(pl.DataFrame(chart_data))
+            .mark_bar(width=50)
+            .encode(
+                x=alt.X("Method:N", title="Analysis Method"),
+                y=alt.Y("Count:Q", title="Region Count", stack="zero"),
+                color=alt.Color(
+                    "Type:N", scale=alt.Scale(range=["#8b4513", "#2f4f4f", "#daa520"])
+                ),
+                tooltip=[
+                    alt.Tooltip("Method:N", title="Method"),
+                    alt.Tooltip("Type:N", title="Region Type"),
+                    alt.Tooltip("Count:Q", title="Count", format=","),
+                ],
+            )
+            .properties(width=200, height=150, title="Region Count Breakdown")
+        )
+        return chart
+    except Exception:
+        return alt.Chart(pl.DataFrame([{"x": 0, "y": 0}])).mark_text(text="Chart Error")

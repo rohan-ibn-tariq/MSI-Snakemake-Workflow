@@ -109,7 +109,9 @@ def parse_args():
 
 
 def main():
-    """Main function to execute the MSI analysis."""
+    """
+    Main function to execute the MSI analysis.
+    """
 
     args = parse_args()
 
@@ -120,7 +122,7 @@ def main():
 
     print("Loading BED regions...")
     regions, total_ms_regions = load_bed_regions(args.bed)
-   
+
     print(f"Total MS regions from BED: {total_ms_regions:,}")
 
 
@@ -155,15 +157,7 @@ def main():
     else:
         print("Cannot run regional DP - data preparation failed")
 
-    import json
-    debug_output = {
-        "regional_results": regional_results,
-        "af_evolution_results": af_evolution_results
-    }
-    with open("temp_af_debug.json", "w") as f:
-        json.dump(debug_output, f, indent=2, default=str)
-    print("Debug output saved to: temp_af_debug.json")
-
+    #TODO: Implement debug AF filtering discrepancy
     debug_af_filtering_discrepancy(dp_result, total_ms_regions)
 
     output_data = {
@@ -204,7 +198,7 @@ def main():
             json.dump(msi_data, f, indent=2)
     print(f"Quantification data saved to: {args.quantification_output}")
 
-    generate_msi_html_report(msi_data, args.html_report)
+    generate_msi_html_report(regional_results, af_evolution_results, msi_data, args.html_report)
 
     print(f"Debug log: {args.debug_log}")
     print(f"HTML report: {args.html_report}")
