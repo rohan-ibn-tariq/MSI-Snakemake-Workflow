@@ -16,6 +16,7 @@ import pysam
 ################## DATA QUALITY VALIDATION & IMPUTATION FUNCTIONS ###################
 #####################################################################################
 
+
 def validate_probabilities(
     pp: Optional[float], pa: Optional[float], art: Optional[float]
 ) -> Tuple[bool, List[str]]:
@@ -328,6 +329,7 @@ def extract_af_data_for_variant(
 ################## DATA PREPARATION #################################################
 #####################################################################################
 
+
 def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform"):
     """Data Preparation Function for Dynamic Programming Analysis."""
 
@@ -441,6 +443,7 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
 ################## DYNAMIC PROGRAMMING CORE  ########################################
 #####################################################################################
 
+
 def run_msi_dp(variants_with_probabilities):
     """
     Execute dynamic programming algorithm for MSI variant probability distribution.
@@ -506,10 +509,43 @@ def run_msi_dp(variants_with_probabilities):
     return prev_col  # Final distribution: [P(0), P(1), ..., P(n)]
 
 
-def calculate_expected_value(distribution):
+#####################################################################################
+################## STATISTICAL HELPERS FOR DP ANALYSIS ##############################
+#####################################################################################
+
+
+def calculate_expected_value(distribution: List[float]) -> float:
     """
-    Calculate expected number of MSI variants from probability distribution.
+    Calculate expected number of MSI variants from DP probability distribution.
+
+    Mathematical foundation: E[X] = Σ(i × P(X = i)) for i = 0 to n
+
+    Args:
+        distribution (List[float]): Probability distribution from run_msi_dp()
+            where distribution[i] = P(exactly i MSI variants)
+
+    Returns:
+        float: Expected number of MSI variants
+
+    Raises:
+        ValueError: If distribution doesn't sum to 1.0 (within 0.005 tolerance)
+
+    Note:
+        Distribution from run_msi_dp() should sum to 1.0 (valid probabilities).
+        Uses same 0.005 tolerance as PHRED probability conversion for consistency.
+
+    #TODO: Fix the tolerance check to be more robust.
     """
+    if not distribution:
+        return 0.0
+
+    # Validation with PHRED tolerance
+    total = sum(distribution)
+    if abs(total - 1.0) > 0.005:  # Same tolerance as PHRED conversion
+        raise ValueError(
+            f"Invalid probability distribution: sums to {total:.6f}, expected 1.0 ± 0.005"
+        )
+
     return sum(i * prob for i, prob in enumerate(distribution))
 
 
