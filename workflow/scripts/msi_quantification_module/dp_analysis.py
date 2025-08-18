@@ -12,10 +12,10 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import pysam
 
-
 #####################################################################################
 ################## DATA QUALITY VALIDATION & IMPUTATION FUNCTIONS ###################
 #####################################################################################
+
 
 def validate_probabilities(
     pp: Optional[float], pa: Optional[float], art: Optional[float]
@@ -82,8 +82,36 @@ def validate_af_value(
         return -2, [f"{sample_name}_invalid_af_type"]  # Invalid data
 
 
+# pylint: disable=too-many-locals,too-many-branches,too-many-statements
 def apply_4_step_imputation_to_variant(variant: Dict) -> None:
-    """Apply complete 4-step imputation with Johannes formula and full audit trail."""
+    """
+    Apply 4-step probabilistic imputation to variant with complete audit trail.
+
+    Implements formula for MSI analysis: p_present + p_absent = 1.0
+    where p_absent = prob_absent + prob_artifact (consolidation step).
+
+    IMPUTATION STRATEGY:
+    1. All present (0 missing): Direct consolidation
+    2. One missing: Derive from constraint (sum = 1.0)
+    3. Two missing: Proportional split using 2:1:1 ratio (pp:pa:art)
+    4. All missing: Uniform distribution (present=0.5, absent=0.5)
+
+    Args:
+        variant (Dict): Variant dictionary containing prob_present, prob_absent,
+                        prob_artifact, and sample_afs fields
+
+    Returns:
+        None: Modifies variant in-place by adding dp_data field with:
+            - p_present: Final present probability (0-1)
+            - p_absent: Final absent probability (0-1)
+            - af_by_sample: Validated AF values per sample (-2=invalid, -1=missing, 0-1=valid)
+            - audit_trail: Complete imputation methodology tracking
+
+    Side Effects:
+        - Adds variant["dp_data"] field with imputation results
+        - Validates and normalizes all AF values with error tracking
+        - Creates detailed audit trail for reproducibility
+    """
 
     pp = variant.get("prob_present")
     pa = variant.get("prob_absent")
@@ -108,7 +136,8 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
         p_absent = 0.5
         audit_trail["imputation_method"] = "validation_fallback_uniform"
         audit_trail["calculation_steps"] = (
-            f"validation failed: {prob_errors}, applied uniform p_present=0.5, p_absent=0.5"
+            f"validation failed: {prob_errors}, "
+            f"applied uniform p_present=0.5, p_absent=0.5"
         )
         audit_trail["validation_issues"] = prob_errors
         audit_trail["fallback_applied"] = True
@@ -130,10 +159,11 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
             p_absent = pa + art
             audit_trail["imputation_method"] = "consolidation_direct"
             audit_trail["calculation_steps"] = (
-                f"p_absent = prob_absent + prob_artifact = {pa} + {art} = {p_absent}, p_present = {p_present}"
+                f"p_absent = prob_absent + prob_artifact = {pa} + {art} = {p_absent}, "
+                f"p_present = {p_present}"
             )
 
-        # SECTION: One missing - derive from constraint (sum = 1.0)  
+        # SECTION: One missing - derive from constraint (sum = 1.0)
         elif missing_count == 1:
             if pp is None:
                 derived = 1.0 - pa - art
@@ -141,7 +171,8 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
                 p_absent = pa + art
                 audit_trail["imputation_method"] = "constraint_derived_present"
                 audit_trail["calculation_steps"] = (
-                    f"derived prob_present = 1.0 - {pa} - {art} = {derived}, p_absent = {pa} + {art} = {p_absent}"
+                    f"derived prob_present = 1.0 - {pa} - {art} = {derived}, "
+                    f"p_absent = {pa} + {art} = {p_absent}"
                 )
 
             elif pa is None:
@@ -150,7 +181,8 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
                 p_absent = derived + art
                 audit_trail["imputation_method"] = "constraint_derived_absent"
                 audit_trail["calculation_steps"] = (
-                    f"derived prob_absent = 1.0 - {pp} - {art} = {derived}, p_absent = {derived} + {art} = {p_absent}"
+                    f"derived prob_absent = 1.0 - {pp} - {art} = {derived}, "
+                    f"p_absent = {derived} + {art} = {p_absent}"
                 )
 
             elif art is None:
@@ -159,7 +191,8 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
                 p_absent = pa + derived
                 audit_trail["imputation_method"] = "constraint_derived_artifact"
                 audit_trail["calculation_steps"] = (
-                    f"derived prob_artifact = 1.0 - {pp} - {pa} = {derived}, p_absent = {pa} + {derived} = {p_absent}"
+                    f"derived prob_artifact = 1.0 - {pp} - {pa} = {derived}, "
+                    f"p_absent = {pa} + {derived} = {p_absent}"
                 )
 
         # SECTION: All missing - uniform distribution
@@ -168,10 +201,11 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
             p_absent = 0.5
             audit_trail["imputation_method"] = "uniform_all_missing"
             audit_trail["calculation_steps"] = (
-                "all probabilities missing, applied uniform: present=0.5, absent=0.25, artifact=0.25, p_absent=0.5"
+                "all probabilities missing, applied uniform: present=0.5, absent=0.25, "
+                "artifact=0.25, p_absent=0.5"
             )
 
-        # SECTION: Two missing - proportional split 
+        # SECTION: Two missing - proportional split
         # f1: (pa + art + pp = 1.0)
         # f2: (pa + art = p_absent)
         # Assumed amputations: pp=0.5, pa=0.25, art=0.25
@@ -187,7 +221,9 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
                 p_absent = imputed_absent + art
                 audit_trail["imputation_method"] = "proportional_split_present_absent"
                 audit_trail["calculation_steps"] = (
-                    f"remaining = {remaining}, present = {remaining} * (2/3) = {imputed_present}, absent = {remaining} * (1/3) = {imputed_absent}, p_absent = {imputed_absent} + {art} = {p_absent}"
+                    f"remaining = {remaining}, present = {remaining} * (2/3) = {imputed_present}, "
+                    f"absent = {remaining} * (1/3) = {imputed_absent}, "
+                    f"p_absent = {imputed_absent} + {art} = {p_absent}"
                 )
 
             elif pp is None and art is None:
@@ -197,7 +233,9 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
                 p_absent = pa + imputed_artifact
                 audit_trail["imputation_method"] = "proportional_split_present_artifact"
                 audit_trail["calculation_steps"] = (
-                    f"remaining = {remaining}, present = {remaining} * (2/3) = {imputed_present}, artifact = {remaining} * (1/3) = {imputed_artifact}, p_absent = {pa} + {imputed_artifact} = {p_absent}"
+                    f"remaining = {remaining}, present = {remaining} * (2/3) = {imputed_present}, "
+                    f"artifact = {remaining} * (1/3) = {imputed_artifact}, "
+                    f"p_absent = {pa} + {imputed_artifact} = {p_absent}"
                 )
 
             elif pa is None and art is None:
@@ -207,7 +245,9 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
                 p_absent = imputed_absent + imputed_artifact
                 audit_trail["imputation_method"] = "proportional_split_absent_artifact"
                 audit_trail["calculation_steps"] = (
-                    f"remaining = {remaining}, absent = {remaining} * 0.5 = {imputed_absent}, artifact = {remaining} * 0.5 = {imputed_artifact}, p_absent = {imputed_absent} + {imputed_artifact} = {p_absent}"
+                    f"remaining = {remaining}, absent = {remaining} * 0.5 = {imputed_absent}, "
+                    f"artifact = {remaining} * 0.5 = {imputed_artifact}, "
+                    f"p_absent = {imputed_absent} + {imputed_artifact} = {p_absent}"
                 )
 
     # Process AF values for each sample with validation and audit tracking
