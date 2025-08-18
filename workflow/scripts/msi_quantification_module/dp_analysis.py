@@ -283,10 +283,34 @@ def apply_4_step_imputation_to_variant(variant: Dict) -> None:
     }
 
 
-def extract_af_data_for_variant(variant, sample_list):
+def extract_af_data_for_variant(
+    variant: Dict, sample_list: List[str]
+) -> Dict[str, Union[float, int]]:
     """
-    Extract and normalize AF data without full DP processing
+    Extract and normalize AF data for N/A variants in uncertain regions.
+    
+    Used only for N/A variants during AF evolution analysis of uncertain regions.
+    Provides lightweight AF extraction without the full DP processing and audit
+    trails used for perfect variants in apply_4_step_imputation_to_variant.
+    
+    Args:
+        variant (Dict): N/A variant dictionary containing sample_afs field
+        sample_list (List[str]): Complete list of sample names from VCF header
+        
+    Returns:
+        Dict[str, Union[float, int]]: AF values per sample where:
+            - float (0.0-1.0): Valid AF value
+            - -1: Missing/null AF (biological uncertainty)
+            - -2: Invalid AF data (technical error)
+    
+    Note:
+        Only called for N/A variants to count uncertain regions in AF evolution.
+    
+    #TODO: Refactor to process all variants (perfect + N/A) in single loop rather
+        than separate processing. Current separation exists for time-saving
+        during development but creates code duplication.
     """
+
     sample_afs = variant.get("sample_afs", {})
     af_by_sample = {}
 
