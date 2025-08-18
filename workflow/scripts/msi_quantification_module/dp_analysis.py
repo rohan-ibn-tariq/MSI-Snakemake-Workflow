@@ -288,24 +288,24 @@ def extract_af_data_for_variant(
 ) -> Dict[str, Union[float, int]]:
     """
     Extract and normalize AF data for N/A variants in uncertain regions.
-    
+
     Used only for N/A variants during AF evolution analysis of uncertain regions.
     Provides lightweight AF extraction without the full DP processing and audit
     trails used for perfect variants in apply_4_step_imputation_to_variant.
-    
+
     Args:
         variant (Dict): N/A variant dictionary containing sample_afs field
         sample_list (List[str]): Complete list of sample names from VCF header
-        
+
     Returns:
         Dict[str, Union[float, int]]: AF values per sample where:
             - float (0.0-1.0): Valid AF value
             - -1: Missing/null AF (biological uncertainty)
             - -2: Invalid AF data (technical error)
-    
+
     Note:
         Only called for N/A variants to count uncertain regions in AF evolution.
-    
+
     #TODO: Refactor to process all variants (perfect + N/A) in single loop rather
         than separate processing. Current separation exists for time-saving
         during development but creates code duplication.
@@ -436,46 +436,67 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
 
 def run_msi_dp(variants_with_probabilities):
     """
-    Matrix m: n variants (columns) × n+1 possible MSI counts (rows)
-    m[i,k] = P(exactly i MSI variants using first k variants)
+    Execute dynamic programming algorithm for MSI variant probability distribution.
+
+    Implements matrix-based approach where:
+    - Matrix has n columns (variants 0 to n-1) and n+1 rows (MSI counts 0 to n)
+    - Our implementation stores row vectors of length n+1
+    - Rows represent possible MSI counts (0 to n)
+    - Each cell contains P(exactly i MSI variants using first k variants)
+
+    Algorithm:
+    - Initialize column 0: m[0,0] = p_absent_0, m[1,0] = p_present_0
+    - Recurrence: m[i,k] = m[i,k-1] × p_absent_k + m[i-1,k-1] × p_present_k
 
     Args:
-        variants_with_probabilities: List of variants with dp_data containing
-            p_present and p_absent probabilities
+        variants_with_probabilities (List[Dict]): Variants with dp_data containing
+            p_present and p_absent probabilities from 4-step imputation
 
     Returns:
-        List: [P(0 MSI), P(1 MSI), P(2 MSI), ..., P(n MSI)]
+        List[float]: Probability distribution [P(0 MSI), P(1 MSI), ..., P(n MSI)]
+        where sum equals 1.0 and each P(i) represents probability of exactly
+        i variants being MSI in the region
+
+    Note:
+        Uses space-optimized approach storing only previous column instead of full matrix.
+        p_present + p_absent should equal 1.0 from imputation step.
+        - PHRED probability conversion has ~0.005 tolerance for floating-point precision
     """
     n = len(variants_with_probabilities)
 
+    # Base case: no variants means P(0 MSI) = 100%
     if n == 0:
         return [1.0]
 
+    # Initialize probability vector: [P(0), P(1), P(2), ..., P(n)]
     prev_col = [0.0] * (n + 1)
 
+    # Column 0: Initialize with first variant probabilities
     p_absent_0 = variants_with_probabilities[0]["dp_data"]["p_absent"]
     p_present_0 = variants_with_probabilities[0]["dp_data"]["p_present"]
 
-    prev_col[0] = p_absent_0
-    prev_col[1] = p_present_0
+    prev_col[0] = p_absent_0  # P(0 MSI) = first variant absent
+    prev_col[1] = p_present_0  # P(1 MSI) = first variant present
 
+    # Process remaining variants using recurrence relation
     for k in range(1, n):
         p_absent_k = variants_with_probabilities[k]["dp_data"]["p_absent"]
         p_present_k = variants_with_probabilities[k]["dp_data"]["p_present"]
 
         curr_col = [0.0] * (n + 1)
 
-        # Base case: P(0 MSI) = previous P(0 MSI) × variant absent
+        # Base case: P(0 MSI) = previous P(0 MSI) × current variant absent
         curr_col[0] = prev_col[0] * p_absent_k
 
-        # Recurrence: Formula for rows 1 to k+1
-        # m[i,k] = m[i,k-1] × p_absent + m[i-1,k-1] × p_present
-        for i in range(1, k + 2):
+        # Recurrence: P(exactly i MSI) has two paths:
+        # Path 1: Had i MSI, current variant absent → still i MSI
+        # Path 2: Had i-1 MSI, current variant present → now i MSI
+        for i in range(1, k + 2):  # Up to k+1 total MSI variants possible
             curr_col[i] = prev_col[i] * p_absent_k + prev_col[i - 1] * p_present_k
 
-        prev_col = curr_col
+        prev_col = curr_col  # Update for next iteration
 
-    return prev_col
+    return prev_col  # Final distribution: [P(0), P(1), ..., P(n)]
 
 
 def calculate_expected_value(distribution):
@@ -613,6 +634,19 @@ def run_regional_msi_analysis(
     msi_status = classify_msi_status(msi_score, msi_high_threshold)
     expected_variants_uncertainty = absolute_uncertainty
 
+    # MSI SCORE BASED ON EXPECTED UNSTABLE REGIONS
+    expected_msi_score = (
+        (expected_unstable_regions / total_ms_regions_from_bed) * 100
+        if total_ms_regions_from_bed > 0
+        else 0.0
+    )
+    expected_msi_score_uncertainty = (
+        (absolute_uncertainty / total_ms_regions_from_bed) * 100
+        if total_ms_regions_from_bed > 0
+        else 0.0
+    )
+    expected_msi_status = classify_msi_status(expected_msi_score, msi_high_threshold)
+
     # Calculate Deterministic MSI score and impact
     deterministic_msi_score = (
         (regions_with_variants / total_ms_regions_from_bed) * 100
@@ -651,50 +685,97 @@ def run_regional_msi_analysis(
     probabilistic_unstable_regions = unstable_count
     deterministic_unstable_regions = regions_with_variants
 
+    # print(
+    #     f"[REGIONAL-DP] Results: {unstable_count}/{total_ms_regions_from_bed} unstable regions"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] MSI Score Range: {msi_score_range[0]:.2f}% - {msi_score_range[1]:.2f}% (methodological uncertainty)"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] Probabilistic MSI Score: {msi_score:.2f}% (P(≥1 MSI) > {unstable_threshold})"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] MSI Score Statistical Uncertainty: ± {msi_score_statistical_uncertainty:.3f}%"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] Deterministic MSI Score: {deterministic_msi_score:.2f}% (regions with ≥1 variant)"
+    # )
+    # print(f"[REGIONAL-DP] Analysis Impact: {analysis_impact:.2f} percentage points")
+    # print(f"[REGIONAL-DP] MSI Status (Probabilistic): {msi_status}")
+    # print(f"[REGIONAL-DP] MSI Status (Deterministic): {deterministic_msi_status}")
+    # print(f"[REGIONAL-DP] Total MS regions in BED: {total_ms_regions_from_bed}")
+    # print(f"[REGIONAL-DP] Regions with variants: {regions_with_variants}")
+    # print(f"[REGIONAL-DP] Uncertain regions: {uncertain_regions_count}")
+    # print(f"[REGIONAL-DP] Deterministic stable regions: {deterministic_stable_regions}")
+    # print(
+    #     f"[REGIONAL-DP] Probabilistic unstable regions: {probabilistic_unstable_regions}"
+    # )
+    # print(f"[REGIONAL-DP] Probabilistic stable regions: {probabilistic_stable_regions}")
+    # print(
+    #     f"[REGIONAL-DP] Deterministic unstable regions: {deterministic_unstable_regions}"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] Expected Unstable Regions Range: {expected_unstable_range[0]:.2f} - {expected_unstable_range[1]:.2f} (methodological uncertainty)"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] Probabilistic: {expected_unstable_regions:.2f}, Deterministic: {regions_with_variants}, Impact: {expected_unstable_impact:.2f}"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] Expected MSI Variants Range: {msi_variants_range[0]:.1f} - {msi_variants_range[1]:.1f} (methodological uncertainty)"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] Probabilistic: {expected_msi_variants:.2f} ± {expected_variants_uncertainty:.2f}, Deterministic: {deterministic_msi_variants}, Impact: {msi_variants_impact:.1f}"
+    # )
+    # print(
+    #     f"[REGIONAL-DP] Expected Unstable Regions: {expected_unstable_regions:.2f} ± {unstable_regions_uncertainty:.2f}, Deterministic: {regions_with_variants}, Impact: {expected_unstable_impact:.2f}"
+    # )
+
+    print("\n" + "=" * 68)
+    print("REGIONAL MSI ANALYSIS RESULTS")
+    print("=" * 68)
+    print()
+    print("GENOME-WIDE SUMMARY:")
+    print(f"  Total MS Regions: {total_ms_regions_from_bed:,}")
     print(
-        f"[REGIONAL-DP] Results: {unstable_count}/{total_ms_regions_from_bed} unstable regions"
+        f"  Regions with Variants: {regions_with_variants:,} ({deterministic_msi_score:.2f}%)"
+    )
+    print(f"  Uncertain Regions: {uncertain_regions_count:,} (N/A variants only)")
+    print()
+    print("MSI SCORE COMPARISON:")
+    print(
+        f"  Probabilistic (P>0.5): {msi_score:.2f}% ± {msi_score_statistical_uncertainty:.5f}% → {msi_status}"
     )
     print(
-        f"[REGIONAL-DP] MSI Score Range: {msi_score_range[0]:.2f}% - {msi_score_range[1]:.2f}% (methodological uncertainty)"
+        f"  Expected (Mathematical): {expected_msi_score:.2f}% ± {expected_msi_score_uncertainty:.5f}% → {expected_msi_status}"
     )
     print(
-        f"[REGIONAL-DP] Probabilistic MSI Score: {msi_score:.2f}% (P(≥1 MSI) > {unstable_threshold})"
+        f"  Deterministic (≥1 variant): {deterministic_msi_score:.2f}% → {deterministic_msi_status}"
     )
     print(
-        f"[REGIONAL-DP] MSI Score Statistical Uncertainty: ± {msi_score_statistical_uncertainty:.3f}%"
+        f"  Methodological Range: {msi_score_range[0]:.2f}% - {msi_score_range[1]:.2f}% ({analysis_impact:.2f}pp impact)"
+    )
+    print()
+    print("UNSTABLE REGIONS BREAKDOWN:")
+    print(
+        f"  Probabilistic: {unstable_count:,} ± {unstable_regions_uncertainty:.2f} regions (Bernoulli)"
     )
     print(
-        f"[REGIONAL-DP] Deterministic MSI Score: {deterministic_msi_score:.2f}% (regions with ≥1 variant)"
+        f"  Expected: {expected_unstable_regions:.0f} ± {absolute_uncertainty:.2f} regions (DP)"
     )
-    print(f"[REGIONAL-DP] Analysis Impact: {analysis_impact:.2f} percentage points")
-    print(f"[REGIONAL-DP] MSI Status (Probabilistic): {msi_status}")
-    print(f"[REGIONAL-DP] MSI Status (Deterministic): {deterministic_msi_status}")
-    print(f"[REGIONAL-DP] Total MS regions in BED: {total_ms_regions_from_bed}")
-    print(f"[REGIONAL-DP] Regions with variants: {regions_with_variants}")
-    print(f"[REGIONAL-DP] Uncertain regions: {uncertain_regions_count}")
-    print(f"[REGIONAL-DP] Deterministic stable regions: {deterministic_stable_regions}")
+    print(f"  Deterministic: {regions_with_variants:,} regions")
     print(
-        f"[REGIONAL-DP] Probabilistic unstable regions: {probabilistic_unstable_regions}"
+        f"  Range Impact: {regions_with_variants - unstable_count:,} region difference"
     )
-    print(f"[REGIONAL-DP] Probabilistic stable regions: {probabilistic_stable_regions}")
-    print(
-        f"[REGIONAL-DP] Deterministic unstable regions: {deterministic_unstable_regions}"
-    )
-    print(
-        f"[REGIONAL-DP] Expected Unstable Regions Range: {expected_unstable_range[0]:.2f} - {expected_unstable_range[1]:.2f} (methodological uncertainty)"
-    )
-    print(
-        f"[REGIONAL-DP] Probabilistic: {expected_unstable_regions:.2f}, Deterministic: {regions_with_variants}, Impact: {expected_unstable_impact:.2f}"
-    )
-    print(
-        f"[REGIONAL-DP] Expected MSI Variants Range: {msi_variants_range[0]:.1f} - {msi_variants_range[1]:.1f} (methodological uncertainty)"
-    )
-    print(
-        f"[REGIONAL-DP] Probabilistic: {expected_msi_variants:.2f} ± {expected_variants_uncertainty:.2f}, Deterministic: {deterministic_msi_variants}, Impact: {msi_variants_impact:.1f}"
-    )
-    print(
-        f"[REGIONAL-DP] Expected Unstable Regions: {expected_unstable_regions:.2f} ± {unstable_regions_uncertainty:.2f}, Deterministic: {regions_with_variants}, Impact: {expected_unstable_impact:.2f}"
-    )
+    print()
+    print("STABLE REGIONS BREAKDOWN:")
+    print(f"  Probabilistic: {probabilistic_stable_regions:,} regions")
+    print(f"  Deterministic: {deterministic_stable_regions:,} regions")
+    print()
+    print("UNCERTAINTY ANALYSIS:")
+    print(f"  Statistical Precision: ± {msi_score_statistical_uncertainty:.3f}%")
+    print(f"  Methodological Impact: {analysis_impact:.2f} percentage points")
+    print(f"  Expected vs Deterministic: {expected_unstable_impact:.0f} region gap")
+    print("=" * 68)
 
     return {
         "msi_score": round(msi_score, 2),
@@ -706,6 +787,10 @@ def run_regional_msi_analysis(
         "msi_score_range": msi_score_range,
         "msi_score_deterministic": round(deterministic_msi_score, 2),
         "analysis_impact": round(analysis_impact, 2),
+        # MSI SCORE BASED ON EXPECTED UNSTABLE REGIONS
+        "msi_score_expected": round(expected_msi_score, 2),
+        "msi_score_expected_uncertainty": round(expected_msi_score_uncertainty, 3),
+        "msi_status_expected": expected_msi_status,
         "msi_status_deterministic": deterministic_msi_status,
         "unstable_regions": unstable_count,
         "total_regions": total_ms_regions_from_bed,
@@ -715,7 +800,8 @@ def run_regional_msi_analysis(
         "expected_unstable_range": expected_unstable_range,
         "expected_unstable_impact": round(expected_unstable_impact, 1),
         "expected_variants_uncertainty": round(expected_variants_uncertainty, 2),
-        "expected_unstable_uncertainty": round(unstable_regions_uncertainty, 2),
+        # "expected_unstable_uncertainty": round(unstable_regions_uncertainty, 2),
+        "expected_unstable_uncertainty": round(absolute_uncertainty, 2),
         "expected_msi_variants": round(expected_msi_variants, 2),
         "deterministic_msi_variants": deterministic_msi_variants,
         "msi_variants_range": msi_variants_range,
