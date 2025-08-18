@@ -548,7 +548,21 @@ def calculate_expected_value(distribution: List[float]) -> float:
 
 def calculate_std_dev(distribution: List[float]) -> float:
     """
-    Calculate standard deviation (uncertainty) from probability distribution.
+    Calculate standard deviation (uncertainty) from DP probability distribution.
+
+    Mathematical foundation: σ = √(Var(X)) where Var(X) = Σ((i - E[X])² × P(X = i))
+    This represents the uncertainty in the number of MSI variants.
+
+    Args:
+        distribution (List[float]): Probability distribution from run_msi_dp()
+            where distribution[i] = P(exactly i MSI variants)
+
+    Returns:
+        float: Standard deviation (uncertainty) in number of MSI variants
+
+    Note:
+        Used for DP uncertainty propagation in expected unstable regions and
+        expected MSI variants. Distribution validation handled by calculate_expected_value.
     """
     expected = calculate_expected_value(distribution)
     variance = sum((i - expected) ** 2 * prob for i, prob in enumerate(distribution))
