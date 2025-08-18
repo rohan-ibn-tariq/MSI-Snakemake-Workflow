@@ -16,7 +16,6 @@ import pysam
 ################## DATA QUALITY VALIDATION & IMPUTATION FUNCTIONS ###################
 #####################################################################################
 
-
 def validate_probabilities(
     pp: Optional[float], pa: Optional[float], art: Optional[float]
 ) -> Tuple[bool, List[str]]:
@@ -325,6 +324,10 @@ def extract_af_data_for_variant(
     return af_by_sample
 
 
+#####################################################################################
+################## DATA PREPARATION #################################################
+#####################################################################################
+
 def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform"):
     """Data Preparation Function for Dynamic Programming Analysis."""
 
@@ -433,6 +436,10 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
 
     return dp_ready
 
+
+#####################################################################################
+################## DYNAMIC PROGRAMMING CORE  ########################################
+#####################################################################################
 
 def run_msi_dp(variants_with_probabilities):
     """
