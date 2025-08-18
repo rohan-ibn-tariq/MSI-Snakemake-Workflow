@@ -536,9 +536,6 @@ def calculate_expected_value(distribution: List[float]) -> float:
 
     #TODO: Fix the tolerance check to be more robust.
     """
-    if not distribution:
-        return 0.0
-
     # Validation with PHRED tolerance
     total = sum(distribution)
     if abs(total - 1.0) > 0.005:  # Same tolerance as PHRED conversion
@@ -549,7 +546,7 @@ def calculate_expected_value(distribution: List[float]) -> float:
     return sum(i * prob for i, prob in enumerate(distribution))
 
 
-def calculate_std_dev(distribution):
+def calculate_std_dev(distribution: List[float]) -> float:
     """
     Calculate standard deviation (uncertainty) from probability distribution.
     """
