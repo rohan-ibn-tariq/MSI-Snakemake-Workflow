@@ -569,8 +569,26 @@ def calculate_std_dev(distribution: List[float]) -> float:
     return variance**0.5
 
 
-def calculate_p_unstable(distribution):
-    """Calculate probability of instability: P(≥1 MSI variant)."""
+def calculate_p_unstable(distribution: List[float]) -> float:
+    """
+    Calculate probability of instability: P(≥1 MSI variant).
+
+    Mathematical foundation: P(≥1) = 1 - P(0) = 1 - distribution[0]
+    This represents the probability that at least one variant is MSI.
+
+    Args:
+        distribution (List[float]): Probability distribution from run_msi_dp()
+            where distribution[0] = P(exactly 0 MSI variants)
+
+    Returns:
+        float: Probability of having ≥1 MSI variant (0.0 to 1.0)
+
+    Note:
+        Used for determining unstable regions in regional MSI analysis.
+        Compared against unstable_threshold (default 0.5) for classification.
+    """
+    if not distribution:
+        return 0.0  # No variants = no instability
     return 1.0 - distribution[0]
 
 
