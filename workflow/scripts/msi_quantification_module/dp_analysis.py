@@ -546,19 +546,42 @@ def calculate_expected_value(distribution: List[float]) -> float:
     return sum(i * prob for i, prob in enumerate(distribution))
 
 
-def calculate_std_dev(distribution: List[float]) -> float:
-    """
-    Calculate standard deviation (uncertainty) from DP probability distribution.
+# def calculate_std_dev(distribution: List[float]) -> float:
+#     """
+#     Calculate standard deviation (uncertainty) from DP probability distribution.
 
-    Mathematical foundation: σ = √(Var(X)) where Var(X) = Σ((i - E[X])² × P(X = i))
-    This represents the uncertainty in the number of MSI variants.
+#     Mathematical foundation: σ = √(Var(X)) where Var(X) = Σ((i - E[X])² × P(X = i))
+#     This represents the uncertainty in the number of MSI variants.
+
+#     Args:
+#         distribution (List[float]): Probability distribution from run_msi_dp()
+#             where distribution[i] = P(exactly i MSI variants)
+
+#     Returns:
+#         float: Standard deviation (uncertainty) in number of MSI variants
+
+#     Note:
+#         Used for DP uncertainty propagation in expected unstable regions and
+#         expected MSI variants. Distribution validation handled by calculate_expected_value.
+#     """
+#     expected = calculate_expected_value(distribution)
+#     variance = sum((i - expected) ** 2 * prob for i, prob in enumerate(distribution))
+#     return variance**0.5
+
+
+def calculate_variance(distribution: List[float]) -> float:
+    """
+    Calculate variance from DP probability distribution.
+
+    Mathematical foundation: Var(X) = Σ((i - E[X])² × P(X = i)) for i = 0 to n
+    This represents the variance in the number of MSI variants.
 
     Args:
         distribution (List[float]): Probability distribution from run_msi_dp()
             where distribution[i] = P(exactly i MSI variants)
 
     Returns:
-        float: Standard deviation (uncertainty) in number of MSI variants
+        float: Variance in number of MSI variants
 
     Note:
         Used for DP uncertainty propagation in expected unstable regions and
@@ -566,7 +589,7 @@ def calculate_std_dev(distribution: List[float]) -> float:
     """
     expected = calculate_expected_value(distribution)
     variance = sum((i - expected) ** 2 * prob for i, prob in enumerate(distribution))
-    return variance**0.5
+    return variance
 
 
 def calculate_p_unstable(distribution: List[float]) -> float:
@@ -593,7 +616,7 @@ def calculate_p_unstable(distribution: List[float]) -> float:
 
 
 def propagate_uncertainties(
-    uncertainties: List[float], total_regions: int
+    variances: List[float], total_regions: int
 ) -> Tuple[float, float]:
     """
     Propagate statistical uncertainties for MSI score calculation using error propagation theory.
@@ -604,13 +627,13 @@ def propagate_uncertainties(
     - Standard deviation: σ(sum) = √(σ₁² + σ₂² + ... + σₙ²)
 
     APPLICATION TO MSI ANALYSIS:
-    - Each region contributes: P(unstable) ± uncertainty to total unstable count
+    - Each region contributes: variance to total unstable count variance
     - MSI score = (total unstable / total regions) × 100
-    - MSI uncertainty = (uncertainty in count / total regions) × 100
+    - MSI uncertainty = (sqrt(total_variance) / total regions) × 100
 
     Args:
-        uncertainties (List[float]): List of standard deviations from individual regions
-                                    obtained from calculate_std_dev() applied to DP distributions
+        variances (List[float]): List of variances from individual regions
+                            obtained from calculate_variance() applied to DP distributions
         total_regions (int): Total microsatellite regions in genome (denominator for MSI score)
 
     Returns:
@@ -628,18 +651,16 @@ def propagate_uncertainties(
     if total_regions <= 0:
         raise ValueError(f"Total_regions must be positive, got {total_regions}")
 
-    if not uncertainties:
+    if not variances:
         return 0.0, 0.0
 
-    # Validate uncertainty values
-    for i, uncertainty in enumerate(uncertainties):
-        if uncertainty < 0:
-            raise ValueError(
-                f"Uncertainty[{i}] must be non-negative, got {uncertainty}"
-            )
+    # Validate variance values
+    for i, variance in enumerate(variances):
+        if variance < 0:
+            raise ValueError(f"Variance[{i}] must be non-negative, got {variance}")
 
     # Sum of variances
-    total_variance = sum(u**2 for u in uncertainties)
+    total_variance = sum(variances)
 
     # Standard deviation of total unstable count
     uncertainty_in_count = total_variance**0.5
@@ -662,7 +683,7 @@ def classify_msi_status(msi_score: float, msi_high_threshold: float = 3.5) -> st
 
     Returns:
         str: MSI classification ("MSI-High" or "MSS")
-        
+
     Raises:
         ValueError: If msi_score is negative or msi_high_threshold is non-positive
     """
@@ -670,7 +691,7 @@ def classify_msi_status(msi_score: float, msi_high_threshold: float = 3.5) -> st
         raise ValueError(f"MSI score must be non-negative, got {msi_score}")
     if msi_high_threshold <= 0:
         raise ValueError(f"MSI threshold must be positive, got {msi_high_threshold}")
-        
+
     return "MSI-High" if msi_score >= msi_high_threshold else "MSS"
 
 
@@ -696,7 +717,7 @@ def run_regional_msi_analysis(
     print("[REGIONAL-DP] Starting regional MSI analysis")
 
     unstable_count = 0
-    region_uncertainties = []
+    region_variances = []
     regions_with_variants = 0
     uncertain_regions_count = dp_ready_data.get("total_uncertain_regions", 0)
 
@@ -710,9 +731,9 @@ def run_regional_msi_analysis(
 
             distribution = run_msi_dp(variants)
             p_unstable = calculate_p_unstable(distribution)
-            uncertainty = calculate_std_dev(distribution)
 
-            region_uncertainties.append(uncertainty)
+            variance = calculate_variance(distribution)
+            region_variances.append(variance)
 
             if p_unstable > unstable_threshold:
                 unstable_count += 1
@@ -737,7 +758,7 @@ def run_regional_msi_analysis(
         else 0.0
     )
     absolute_uncertainty, overall_uncertainty = propagate_uncertainties(
-        region_uncertainties, total_ms_regions_from_bed
+        region_variances, total_ms_regions_from_bed
     )
     msi_status = classify_msi_status(msi_score, msi_high_threshold)
     expected_variants_uncertainty = absolute_uncertainty
@@ -997,7 +1018,7 @@ def run_af_evolution_analysis(
 
         for af_threshold in af_thresholds:
             unstable_count = 0
-            region_uncertainties = []
+            region_variances = []
             regions_analyzed = 0
             expected_unstable_regions = 0.0
             expected_msi_variants = 0.0
@@ -1013,9 +1034,9 @@ def run_af_evolution_analysis(
 
                     distribution = run_msi_dp(filtered_variants)
                     p_unstable = calculate_p_unstable(distribution)
-                    uncertainty = calculate_std_dev(distribution)
 
-                    region_uncertainties.append(uncertainty)
+                    variance = calculate_variance(distribution)
+                    region_variances.append(variance)
 
                     if p_unstable > unstable_threshold:
                         unstable_count += 1
@@ -1032,7 +1053,7 @@ def run_af_evolution_analysis(
                 else 0.0
             )
             absolute_uncertainty, msi_uncertainty = propagate_uncertainties(
-                region_uncertainties, total_ms_regions
+                region_variances, total_ms_regions
             )
             expected_variants_uncertainty = absolute_uncertainty
 
