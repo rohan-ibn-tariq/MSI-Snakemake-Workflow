@@ -331,7 +331,15 @@ def extract_af_data_for_variant(
 
 
 def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform"):
-    """Data Preparation Function for Dynamic Programming Analysis."""
+    """
+    Data Preparation Function for Dynamic Programming Analysis.
+
+    #TODO: PERFORMANCE OPTIMIZATION CONSIDERATION
+    # Current: Separate loops of same kind (data prep + imputation)
+    # Future: Consider merging into single func with AF logic
+    # Trade-off: Performance gain vs code clarity/maintainability
+    # State: Profile first, optimize only if bottleneck identified
+    """
 
     print("[DP-ENTRY] Starting data preparation for dynamic programming analysis")
     print(f"[DP-ENTRY] Processing {len(results)} regions")
@@ -351,7 +359,7 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
         for af_threshold in af_thresholds:
             af_data_by_sample[sample_name][af_threshold] = {
                 "uncertain_regions": 0,
-                "variant_count": 0
+                "variant_count": 0,
             }
 
     # Extract variants and process in single pass
@@ -374,7 +382,7 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
                     region_has_variants_at_af_for_sample = False
                     for variant in na_variants:
                         af_data = extract_af_data_for_variant(variant, sample_list)
-                        #TODO: IN REFACTORING FIX
+                        # TODO: IN REFACTORING FIX
                         sample_af = af_data[sample_name]
                         if (
                             (af_threshold == -1 and sample_af == -1)
@@ -385,7 +393,9 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
                             break
 
                     if region_has_variants_at_af_for_sample:
-                        af_data_by_sample[sample_name][af_threshold]["uncertain_regions"] += 1
+                        af_data_by_sample[sample_name][af_threshold][
+                            "uncertain_regions"
+                        ] += 1
 
         if perfect_variants:
             # Process each variant in this region
@@ -402,10 +412,14 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
                     sample_af = af_by_sample[sample_name]
 
                     for af_threshold in af_thresholds:
-                        if (af_threshold == -1 and sample_af == -1) or \
-                        (af_threshold == -2 and sample_af == -2) or \
-                        (af_threshold >= 0 and sample_af >= af_threshold):
-                            af_data_by_sample[sample_name][af_threshold]["variant_count"] += 1
+                        if (
+                            (af_threshold == -1 and sample_af == -1)
+                            or (af_threshold == -2 and sample_af == -2)
+                            or (af_threshold >= 0 and sample_af >= af_threshold)
+                        ):
+                            af_data_by_sample[sample_name][af_threshold][
+                                "variant_count"
+                            ] += 1
 
                 total_variants += 1
 
@@ -447,6 +461,7 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
 #####################################################################################
 ################## DYNAMIC PROGRAMMING CORE  ########################################
 #####################################################################################
+
 
 def run_msi_dp(variants_with_probabilities):
     """
@@ -516,6 +531,7 @@ def run_msi_dp(variants_with_probabilities):
 #####################################################################################
 ################## STATISTICAL HELPERS FOR DP ANALYSIS ##############################
 #####################################################################################
+
 
 def calculate_expected_value(distribution: List[float]) -> float:
     """
@@ -679,12 +695,12 @@ def classify_msi_status(msi_score: float, msi_high_threshold: float = 3.5) -> st
 ################## DP ANALYSIS FUNCTIONS ############################################
 #####################################################################################
 def calculate_msi_metrics_for_regions(
-    regions_dict: Dict[str, List], 
+    regions_dict: Dict[str, List],
     total_regions: int,
     uncertain_regions: int,
     total_variants: int,
-    unstable_threshold: float = 0.5, 
-    msi_high_threshold: float = 3.5
+    unstable_threshold: float = 0.5,
+    msi_high_threshold: float = 3.5,
 ) -> Dict:
     """
     Core DP analysis metrics calculation for filtered regions.
@@ -694,7 +710,7 @@ def calculate_msi_metrics_for_regions(
 
     Args:
         regions_dict: Dictionary of region_id -> variants list
-        total_regions: Total number of regions in analysis  
+        total_regions: Total number of regions in analysis
         uncertain_regions: Count of uncertain regions (N/A variants)
         total_variants: Total count of variants for deterministic_msi_variants
         unstable_threshold: P(≥1 MSI) threshold for calling region unstable
@@ -712,7 +728,7 @@ def calculate_msi_metrics_for_regions(
     region_variances = []
     region_unstable_uncertainties = []
 
-    #uncertain_regions_count = dp_ready_data.get("total_uncertain_regions", 0)
+    # uncertain_regions_count = dp_ready_data.get("total_uncertain_regions", 0)
 
     for region_id, variants in regions_dict.items():
         if variants:
@@ -736,21 +752,13 @@ def calculate_msi_metrics_for_regions(
             bernoulli_variance = p_unstable * (1 - p_unstable)
             region_unstable_uncertainties.append(bernoulli_variance)
 
-    # Core MSI score calculations  
-    msi_score = (
-        (unstable_count / total_regions) * 100
-        if total_regions > 0
-        else 0.0
-    )
+    # Core MSI score calculations
+    msi_score = (unstable_count / total_regions) * 100 if total_regions > 0 else 0.0
     expected_msi_score = (
-        (expected_unstable_regions / total_regions) * 100
-        if total_regions > 0
-        else 0.0
+        (expected_unstable_regions / total_regions) * 100 if total_regions > 0 else 0.0
     )
     deterministic_msi_score = (
-        (regions_with_variants / total_regions) * 100
-        if total_regions > 0
-        else 0.0
+        (regions_with_variants / total_regions) * 100 if total_regions > 0 else 0.0
     )
 
     # MSI status classifications
@@ -774,9 +782,7 @@ def calculate_msi_metrics_for_regions(
         else 0.0
     )
     expected_msi_score_uncertainty = (
-        (absolute_uncertainty / total_regions) * 100
-        if total_regions > 0
-        else 0.0
+        (absolute_uncertainty / total_regions) * 100 if total_regions > 0 else 0.0
     )
 
     # Impact and range calculations
@@ -803,51 +809,42 @@ def calculate_msi_metrics_for_regions(
     deterministic_stable_regions = (
         total_regions - regions_with_variants - uncertain_regions
     )
-    probabilistic_stable_regions = (
-        total_regions - unstable_count - uncertain_regions
-    )
+    probabilistic_stable_regions = total_regions - unstable_count - uncertain_regions
     deterministic_unstable_regions = regions_with_variants
 
     return {
-        # CORE MSI SCORE CALCULATIONS  
+        # CORE MSI SCORE CALCULATIONS
         "msi_score_probabilistic": round(msi_score, 2),
         "msi_score_expected": round(expected_msi_score, 2),
         "msi_score_deterministic": round(deterministic_msi_score, 2),
-
         # MSI STATUS CLASSIFICATIONS
         "msi_status_probabilistic": msi_status,
         "msi_status_expected": expected_msi_status,
         "msi_status_deterministic": deterministic_msi_status,
-
         # BASE UNCERTAINTY CALCULATIONS
         "uncertainty_variants_expected": round(expected_variants_uncertainty, 2),
         "uncertainty_unstable_expected": round(absolute_uncertainty, 2),
-
         # MSI SCORE UNCERTAINTIES
         "uncertainty_msi_score_probabilistic": round(
             msi_score_statistical_uncertainty, 3
         ),
         "uncertainty_msi_score_expected": round(expected_msi_score_uncertainty, 3),
-
         # IMPACT AND RANGE CALCULATIONS
         "impact_msi_score_probabilistic_vs_deterministic": round(analysis_impact, 2),
         "range_msi_score_probabilistic_vs_deterministic": msi_score_range,
         "impact_unstable_expected_vs_deterministic": round(expected_unstable_impact, 1),
         "range_unstable_expected_vs_deterministic": expected_unstable_range,
-
         # MSI VARIANTS CALCULATIONS
         "variants_expected": round(expected_msi_variants, 2),
         "variants_deterministic": deterministic_msi_variants,
         "impact_variants_expected_vs_deterministic": round(msi_variants_impact, 2),
         "range_variants_expected_vs_deterministic": msi_variants_range,
-
         # REGION BREAKDOWN CALCULATIONS
         # 1. Basic region counts
         "total_regions": total_regions,
         "regions_with_variants": regions_with_variants,
         "regions_without_variants": total_regions - regions_with_variants,
         "uncertain_regions": uncertain_regions,
-
         # 2. Method-specific region counts
         "regions_unstable_probabilistic": unstable_count,
         "regions_unstable_expected": round(expected_unstable_regions, 2),
@@ -865,32 +862,34 @@ def run_regional_msi_analysis(
 ) -> Dict:
     """
     Run genome-wide regional MSI analysis using dynamic programming approach.
-    
-    Wrapper function that calls calculate_msi_metrics_for_regions() with 
+
+    Wrapper function that calls calculate_msi_metrics_for_regions() with
     genome-wide data from prepare_variants_for_dp().
-    
+
     Args:
         dp_ready_data: Prepared data from prepare_variants_for_dp()
         total_ms_regions_from_bed: Total microsatellite regions from BED file
         unstable_threshold: P(≥1 MSI) threshold for region classification (default: 0.5)
         msi_high_threshold: MSI score threshold for MSI-High classification (default: 3.5)
-    
+
     Returns:
         Dict: Complete MSI analysis results from calculate_msi_metrics_for_regions()
     """
     print("[REGIONAL-DP] Starting regional MSI analysis")
-    
+
     return calculate_msi_metrics_for_regions(
-        dp_ready_data["regions"], 
+        dp_ready_data["regions"],
         total_ms_regions_from_bed,
         dp_ready_data.get("total_uncertain_regions", 0),
         dp_ready_data["total_variants"],
-        unstable_threshold, 
-        msi_high_threshold
+        unstable_threshold,
+        msi_high_threshold,
     )
 
 
-def filter_variants_by_af_and_sample(variants, af_threshold, sample_name):
+def filter_variants_by_af_and_sample(
+    variants: List[Dict], af_threshold: float, sample_name: str
+) -> List[Dict]:
     """
     Filter variants by AF threshold for a specific sample.
 
@@ -901,8 +900,15 @@ def filter_variants_by_af_and_sample(variants, af_threshold, sample_name):
 
     Returns:
         List of variants that meet AF threshold for this sample
+
+    #TODO: AF PRE-COMPUTATION OPTIMIZATION
+    # Current: This function called repeatedly in nested loops (samples × thresholds × regions)
+    # Results in ~n+ filtering operations for same data
+    # Alternative: Pre-compute all AF-filtered combinations in prepare_variants_for_dp()
+    # Trade-off: ~x% performance gain vs z×-y× memory increase
+    # State: Current lazy evaluation chosen for memory efficiency and scalability
     """
-    filtered = []
+    filtered_variants = []
 
     for variant in variants:
         af_by_sample = variant["dp_data"]["af_by_sample"]
@@ -910,22 +916,22 @@ def filter_variants_by_af_and_sample(variants, af_threshold, sample_name):
 
         if af_threshold == -1:
             if sample_af == -1:
-                filtered.append(variant)
+                filtered_variants.append(variant)
         elif af_threshold == -2:
             if sample_af == -2:
-                filtered.append(variant)
+                filtered_variants.append(variant)
         else:
             if sample_af >= af_threshold:
-                filtered.append(variant)
+                filtered_variants.append(variant)
 
-    return filtered
+    return filtered_variants
 
 
 def run_af_evolution_analysis(
-    dp_ready_data: Dict, 
-    total_ms_regions: int, 
-    unstable_threshold: float = 0.5, 
-    msi_high_threshold: float = 3.5
+    dp_ready_data: Dict,
+    total_ms_regions: int,
+    unstable_threshold: float = 0.5,
+    msi_high_threshold: float = 3.5,
 ) -> Dict:
     """
     Run AF-based MSI evolution analysis across allele frequency thresholds.
@@ -936,7 +942,7 @@ def run_af_evolution_analysis(
 
     Args:
         dp_ready_data (Dict): Output from prepare_variants_for_dp()
-        total_ms_regions (int): Total MS regions from BED file  
+        total_ms_regions (int): Total MS regions from BED file
         unstable_threshold (float): P(≥1 MSI) threshold for calling region unstable (default: 0.5)
         msi_high_threshold (float): MSI score threshold for MSI-High classification (default: 3.5)
 
@@ -955,20 +961,26 @@ def run_af_evolution_analysis(
 
         for af_threshold in af_thresholds:
             af_data = dp_ready_data["af_data_by_sample"][sample_name][af_threshold]
-            uncertain_regions = af_data["uncertain_regions"] 
+            uncertain_regions = af_data["uncertain_regions"]
             total_variants = af_data["variant_count"]
 
             # Create filtered regions dictionary by sample and AF threshold
             # for calculating MSI metrics per AF threshold
             filtered_regions = {}
             for region_id, variants in dp_ready_data["regions"].items():
-                filtered_variants = filter_variants_by_af_and_sample(variants, af_threshold, sample_name)
+                filtered_variants = filter_variants_by_af_and_sample(
+                    variants, af_threshold, sample_name
+                )
                 if filtered_variants:
                     filtered_regions[region_id] = filtered_variants
 
             metrics = calculate_msi_metrics_for_regions(
-                filtered_regions, total_ms_regions, uncertain_regions, total_variants,
-                unstable_threshold, msi_high_threshold
+                filtered_regions,
+                total_ms_regions,
+                uncertain_regions,
+                total_variants,
+                unstable_threshold,
+                msi_high_threshold,
             )
 
             sample_results[f"af_{af_threshold}"] = metrics
