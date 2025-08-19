@@ -592,33 +592,51 @@ def calculate_p_unstable(distribution: List[float]) -> float:
     return 1.0 - distribution[0]
 
 
-def propagate_uncertainties(uncertainties, total_regions):
+def propagate_uncertainties(
+    uncertainties: List[float], total_regions: int
+) -> Tuple[float, float]:
     """
-    Standard statistical uncertainty propagation for MSI score.
+    Propagate statistical uncertainties for MSI score calculation using error propagation theory.
 
     MATHEMATICAL FOUNDATION:
     For independent random variables X₁, X₂, ..., Xₙ:
-    - Var(X₁ + X₂ + ... + Xₙ) = Var(X₁) + Var(X₂) + ... + Var(Xₙ)
-    - σ(sum) = √(σ₁² + σ₂² + ... + σₙ²)
+    - Variance additivity: Var(X₁ + X₂ + ... + Xₙ) = Var(X₁) + Var(X₂) + ... + Var(Xₙ)
+    - Standard deviation: σ(sum) = √(σ₁² + σ₂² + ... + σₙ²)
 
-    APPLICATION TO MSI:
+    APPLICATION TO MSI ANALYSIS:
     - Each region contributes: P(unstable) ± uncertainty to total unstable count
-    - Total unstable count = sum of contributions ± √(sum of uncertainty²)
     - MSI score = (total unstable / total regions) × 100
     - MSI uncertainty = (uncertainty in count / total regions) × 100
 
-    ERROR PROPAGATION FOR DIVISION:
-    If Y = X/N (constant), then σ_Y = σ_X/N
-
     Args:
-        uncertainties: List of standard deviations from individual regions
-        total_regions: Total MS regions in genome (denominator for MSI score)
+        uncertainties (List[float]): List of standard deviations from individual regions
+                                    obtained from calculate_std_dev() applied to DP distributions
+        total_regions (int): Total microsatellite regions in genome (denominator for MSI score)
 
     Returns:
-        float: Uncertainty in MSI score (percentage points)
+        Tuple[float, float]: (uncertainty_in_count, msi_uncertainty_percentage)
+            - uncertainty_in_count: Standard deviation of total unstable region count
+            - msi_uncertainty_percentage: MSI score uncertainty in percentage points
+
+    Raises:
+        ValueError: If total_regions <= 0
+
+    Note:
+        Used for DP uncertainty propagation in regional MSI analysis to quantify
+        statistical precision of MSI score estimates.
     """
+    if total_regions <= 0:
+        raise ValueError(f"Total_regions must be positive, got {total_regions}")
+
     if not uncertainties:
         return 0.0, 0.0
+
+    # Validate uncertainty values
+    for i, uncertainty in enumerate(uncertainties):
+        if uncertainty < 0:
+            raise ValueError(
+                f"Uncertainty[{i}] must be non-negative, got {uncertainty}"
+            )
 
     # Sum of variances
     total_variance = sum(u**2 for u in uncertainties)
@@ -633,8 +651,26 @@ def propagate_uncertainties(uncertainties, total_regions):
     return uncertainty_in_count, msi_uncertainty
 
 
-def classify_msi_status(msi_score, msi_high_threshold=3.5):
-    """Classify MSI status using MSIsensor standard."""
+def classify_msi_status(msi_score: float, msi_high_threshold: float = 3.5) -> str:
+    """
+    Classify MSI status using MSIsensor standard threshold.
+
+    Args:
+        msi_score (float): MSI score as percentage (0.0-100.0)
+        msi_high_threshold (float, optional): Threshold for MSI-High classification.
+            Defaults to 3.5 (MSIsensor standard).
+
+    Returns:
+        str: MSI classification ("MSI-High" or "MSS")
+        
+    Raises:
+        ValueError: If msi_score is negative or msi_high_threshold is non-positive
+    """
+    if msi_score < 0:
+        raise ValueError(f"MSI score must be non-negative, got {msi_score}")
+    if msi_high_threshold <= 0:
+        raise ValueError(f"MSI threshold must be positive, got {msi_high_threshold}")
+        
     return "MSI-High" if msi_score >= msi_high_threshold else "MSS"
 
 
