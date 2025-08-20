@@ -84,172 +84,33 @@ def validate_af_value(
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-def apply_4_step_imputation_to_variant(variant: Dict) -> None:
+def process_variant_probabilities_and_af(variant: Dict) -> None:
     """
-    Apply 4-step probabilistic imputation to variant with complete audit trail.
-
-    Implements formula for MSI analysis: p_present + p_absent = 1.0
-    where p_absent = prob_absent + prob_artifact (consolidation step).
-
-    IMPUTATION STRATEGY:
-    1. All present (0 missing): Direct consolidation
-    2. One missing: Derive from constraint (sum = 1.0)
-    3. Two missing: Proportional split using 2:1:1 ratio (pp:pa:art)
-    4. All missing: Uniform distribution (present=0.5, absent=0.5)
-
-    Args:
-        variant (Dict): Variant dictionary containing prob_present, prob_absent,
-                        prob_artifact, and sample_afs fields
-
-    Returns:
-        None: Modifies variant in-place by adding dp_data field with:
-            - p_present: Final present probability (0-1)
-            - p_absent: Final absent probability (0-1)
-            - af_by_sample: Validated AF values per sample (-2=invalid, -1=missing, 0-1=valid)
-            - audit_trail: Complete imputation methodology tracking
+    Process variant probabilities and allele frequencies for DP analysis.
+    Creates dp_data with consolidated probabilities and validated AF values.
 
     Side Effects:
-        - Adds variant["dp_data"] field with imputation results
+        - Adds variant["dp_data"] field with results
         - Validates and normalizes all AF values with error tracking
-        - Creates detailed audit trail for reproducibility
+        - Creates detailed trail for reproducibility
+    
+    Note: Variants with missing probabilities are filtered out by core analysis.
     """
 
     pp = variant.get("prob_present")
     pa = variant.get("prob_absent")
     art = variant.get("prob_artifact")
 
+    p_present = pp
+    p_absent = pa + art
+
     audit_trail = {
-        "missing_fields": [],
-        "imputation_method": None,
-        "calculation_steps": None,
-        "validation_issues": [],
-        "fallback_applied": False,
         "af_processing": {
             "missing_af_samples": [],
             "af_conversion": {},
             "af_errors": [],
         },
     }
-
-    is_valid, prob_errors = validate_probabilities(pp, pa, art)
-    if not is_valid:
-        p_present = 0.5
-        p_absent = 0.5
-        audit_trail["imputation_method"] = "validation_fallback_uniform"
-        audit_trail["calculation_steps"] = (
-            f"validation failed: {prob_errors}, "
-            f"applied uniform p_present=0.5, p_absent=0.5"
-        )
-        audit_trail["validation_issues"] = prob_errors
-        audit_trail["fallback_applied"] = True
-    else:
-        missing_fields = []
-        if pp is None:
-            missing_fields.append("prob_present")
-        if pa is None:
-            missing_fields.append("prob_absent")
-        if art is None:
-            missing_fields.append("prob_artifact")
-
-        audit_trail["missing_fields"] = missing_fields
-        missing_count = len(missing_fields)
-
-        # SECTION: All probabilities available - direct consolidation
-        if missing_count == 0:
-            p_present = pp
-            p_absent = pa + art
-            audit_trail["imputation_method"] = "consolidation_direct"
-            audit_trail["calculation_steps"] = (
-                f"p_absent = prob_absent + prob_artifact = {pa} + {art} = {p_absent}, "
-                f"p_present = {p_present}"
-            )
-
-        # SECTION: One missing - derive from constraint (sum = 1.0)
-        elif missing_count == 1:
-            if pp is None:
-                derived = 1.0 - pa - art
-                p_present = derived
-                p_absent = pa + art
-                audit_trail["imputation_method"] = "constraint_derived_present"
-                audit_trail["calculation_steps"] = (
-                    f"derived prob_present = 1.0 - {pa} - {art} = {derived}, "
-                    f"p_absent = {pa} + {art} = {p_absent}"
-                )
-
-            elif pa is None:
-                derived = 1.0 - pp - art
-                p_present = pp
-                p_absent = derived + art
-                audit_trail["imputation_method"] = "constraint_derived_absent"
-                audit_trail["calculation_steps"] = (
-                    f"derived prob_absent = 1.0 - {pp} - {art} = {derived}, "
-                    f"p_absent = {derived} + {art} = {p_absent}"
-                )
-
-            elif art is None:
-                derived = 1.0 - pp - pa
-                p_present = pp
-                p_absent = pa + derived
-                audit_trail["imputation_method"] = "constraint_derived_artifact"
-                audit_trail["calculation_steps"] = (
-                    f"derived prob_artifact = 1.0 - {pp} - {pa} = {derived}, "
-                    f"p_absent = {pa} + {derived} = {p_absent}"
-                )
-
-        # SECTION: All missing - uniform distribution
-        elif missing_count == 3:
-            p_present = 0.5
-            p_absent = 0.5
-            audit_trail["imputation_method"] = "uniform_all_missing"
-            audit_trail["calculation_steps"] = (
-                "all probabilities missing, applied uniform: present=0.5, absent=0.25, "
-                "artifact=0.25, p_absent=0.5"
-            )
-
-        # SECTION: Two missing - proportional split
-        # f1: (pa + art + pp = 1.0)
-        # f2: (pa + art = p_absent)
-        # Assumed amputations: pp=0.5, pa=0.25, art=0.25
-        # Ratio is: pp:pa:art = 2:1:1
-        else:
-            known_value = pp if pp is not None else (pa if pa is not None else art)
-            remaining = 1.0 - known_value
-
-            if pp is None and pa is None:
-                imputed_present = remaining * (2 / 3)
-                imputed_absent = remaining * (1 / 3)
-                p_present = imputed_present
-                p_absent = imputed_absent + art
-                audit_trail["imputation_method"] = "proportional_split_present_absent"
-                audit_trail["calculation_steps"] = (
-                    f"remaining = {remaining}, present = {remaining} * (2/3) = {imputed_present}, "
-                    f"absent = {remaining} * (1/3) = {imputed_absent}, "
-                    f"p_absent = {imputed_absent} + {art} = {p_absent}"
-                )
-
-            elif pp is None and art is None:
-                imputed_present = remaining * (2 / 3)
-                imputed_artifact = remaining * (1 / 3)
-                p_present = imputed_present
-                p_absent = pa + imputed_artifact
-                audit_trail["imputation_method"] = "proportional_split_present_artifact"
-                audit_trail["calculation_steps"] = (
-                    f"remaining = {remaining}, present = {remaining} * (2/3) = {imputed_present}, "
-                    f"artifact = {remaining} * (1/3) = {imputed_artifact}, "
-                    f"p_absent = {pa} + {imputed_artifact} = {p_absent}"
-                )
-
-            elif pa is None and art is None:
-                imputed_absent = remaining * 0.5
-                imputed_artifact = remaining * 0.5
-                p_present = pp
-                p_absent = imputed_absent + imputed_artifact
-                audit_trail["imputation_method"] = "proportional_split_absent_artifact"
-                audit_trail["calculation_steps"] = (
-                    f"remaining = {remaining}, absent = {remaining} * 0.5 = {imputed_absent}, "
-                    f"artifact = {remaining} * 0.5 = {imputed_artifact}, "
-                    f"p_absent = {imputed_absent} + {imputed_artifact} = {p_absent}"
-                )
 
     # Process AF values for each sample with validation and audit tracking
     sample_afs = variant.get("sample_afs", {})
@@ -401,8 +262,8 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
         if perfect_variants:
             # Process each variant in this region
             for variant in perfect_variants:
-                # Apply 4-step imputation
-                apply_4_step_imputation_to_variant(variant)
+                # Calculate DP probabilities and AF values
+                process_variant_probabilities_and_af(variant)
 
                 # Collect sample names
                 af_by_sample = variant["dp_data"]["af_by_sample"]

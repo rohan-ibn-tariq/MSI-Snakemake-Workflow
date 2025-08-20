@@ -195,7 +195,29 @@ def analyze_variant_in_region(variant_data, region_data):
 
     motif = region_data["motif"]
     is_perfect = is_perfect_repeat(changed_seq, motif)
-    repeat_status = "perfect" if is_perfect else "N/A"
+
+    # Check biological repeat pattern
+    if is_perfect:
+        repeat_status = "perfect"
+        uncertainty_reason = None
+    else:
+        repeat_status = "N/A"
+        uncertainty_reason = "imperfect_repeat"
+    
+    # Check probabilities for perfect repeats
+    if repeat_status == "perfect":
+        pp = variant_data.get("prob_present")
+        pa = variant_data.get("prob_absent") 
+        art = variant_data.get("prob_artifact")
+        
+        #NOTE: DEBUG line:
+        if pp is None or pa is None or art is None:
+            print(f"DEBUG: Missing probs - pp={pp}, pa={pa}, art={art} for variant {variant_data.get('variant_id')}")
+            print(f"DEBUG: Available keys: {list(variant_data.keys())}")
+        
+        if pp is None or pa is None or art is None:
+            repeat_status = "N/A"
+            uncertainty_reason = "missing_probabilities"
 
     return {
         "variant_id": variant_data["variant_id"],
@@ -207,6 +229,7 @@ def analyze_variant_in_region(variant_data, region_data):
         "svlen": variant_data["svlen"],
         "changed_sequence": changed_seq,
         "repeat_status": repeat_status,
+        "uncertainty_reason": uncertainty_reason,
         "af_mean": variant_data["af_mean"],
         "af_max": variant_data["af_max"],
         "prob_present": variant_data["prob_present"],
