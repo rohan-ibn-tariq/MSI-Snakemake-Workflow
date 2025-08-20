@@ -8,6 +8,7 @@ Outputs:
 Provides uncertainty quantification for MSI scores, unstable regions, and variants.
 """
 
+from importlib.metadata import distribution
 from typing import Dict, List, Optional, Tuple, Union
 
 import pysam
@@ -565,19 +566,19 @@ def calculate_expected_value(distribution: List[float]) -> float:
     return sum(i * prob for i, prob in enumerate(distribution))
 
 
-def calculate_variance(distribution: List[float]) -> float:
+def calculate_expected_and_variance(distribution: List[float]) -> Tuple[float, float]:
     """
-    Calculate variance from DP probability distribution.
-
-    Mathematical foundation: Var(X) = Σ((i - E[X])² × P(X = i)) for i = 0 to n
-    This represents the variance in the number of MSI variants.
-
+    Calculate expected value and variance from DP probability distribution.
+        
+    Mathematical foundation: 
+    - E[X] = Σ(i × P(X = i)) for i = 0 to n
+    - Var(X) = Σ((i - E[X])² × P(X = i)) for i = 0 to n
+    
     Args:
-        distribution (List[float]): Probability distribution from run_msi_dp()
-            where distribution[i] = P(exactly i MSI variants)
-
+        distribution: Probability distribution from run_msi_dp()
+        
     Returns:
-        float: Variance in number of MSI variants
+        Tuple of (expected_value, variance)
 
     Note:
         Used for DP uncertainty propagation in expected unstable regions and
@@ -585,7 +586,7 @@ def calculate_variance(distribution: List[float]) -> float:
     """
     expected = calculate_expected_value(distribution)
     variance = sum((i - expected) ** 2 * prob for i, prob in enumerate(distribution))
-    return variance
+    return expected, variance
 
 
 def calculate_p_unstable(distribution: List[float]) -> float:
@@ -698,7 +699,7 @@ def calculate_msi_metrics_for_regions(
     regions_dict: Dict[str, List],
     total_regions: int,
     uncertain_regions: int,
-    total_variants: int,
+    variants_deterministic: int,
     unstable_threshold: float = 0.5,
     msi_high_threshold: float = 3.5,
 ) -> Dict:
@@ -712,40 +713,38 @@ def calculate_msi_metrics_for_regions(
         regions_dict: Dictionary of region_id -> variants list
         total_regions: Total number of regions in analysis
         uncertain_regions: Count of uncertain regions (N/A variants)
-        total_variants: Total count of variants for deterministic_msi_variants
+        variants_deterministic: Total count of variants for deterministic analysis
         unstable_threshold: P(≥1 MSI) threshold for calling region unstable
         msi_high_threshold: MSI score threshold for MSI-High classification
     """
     # Region counting
-    unstable_count = 0
+    regions_unstable_probabilistic = 0
     regions_with_variants = 0
-    expected_unstable_regions = 0.0
+    regions_unstable_expected = 0.0
 
     # Variants Counting
-    expected_msi_variants = 0.0
+    variants_expected = 0.0
 
     # Uncertainty collection
     region_variances = []
     region_unstable_uncertainties = []
 
-    # uncertain_regions_count = dp_ready_data.get("total_uncertain_regions", 0)
-
-    for region_id, variants in regions_dict.items():
+    for _, variants in regions_dict.items():
         if variants:
             regions_with_variants += 1
 
             # Core DP calculation
             distribution = run_msi_dp(variants)
             p_unstable = calculate_p_unstable(distribution)
-            variance = calculate_variance(distribution)
+            expected_value, variance = calculate_expected_and_variance(distribution)
 
             # Region classification
-            if p_unstable > unstable_threshold:
-                unstable_count += 1
+            if p_unstable >= unstable_threshold:
+                regions_unstable_probabilistic += 1
 
             # Expected value accumulation
-            expected_unstable_regions += p_unstable
-            expected_msi_variants += calculate_expected_value(distribution)
+            regions_unstable_expected += p_unstable
+            variants_expected += expected_value
 
             # Uncertainty collection
             region_variances.append(variance)
@@ -753,104 +752,102 @@ def calculate_msi_metrics_for_regions(
             region_unstable_uncertainties.append(bernoulli_variance)
 
     # Core MSI score calculations
-    msi_score = (unstable_count / total_regions) * 100 if total_regions > 0 else 0.0
-    expected_msi_score = (
-        (expected_unstable_regions / total_regions) * 100 if total_regions > 0 else 0.0
+    msi_score_probabilistic = (regions_unstable_probabilistic / total_regions) * 100 if total_regions > 0 else 0.0
+    msi_score_expected = (
+        (regions_unstable_expected / total_regions) * 100 if total_regions > 0 else 0.0
     )
-    deterministic_msi_score = (
+    msi_score_deterministic = (
         (regions_with_variants / total_regions) * 100 if total_regions > 0 else 0.0
     )
 
     # MSI status classifications
-    msi_status = classify_msi_status(msi_score, msi_high_threshold)
-    expected_msi_status = classify_msi_status(expected_msi_score, msi_high_threshold)
-    deterministic_msi_status = classify_msi_status(
-        deterministic_msi_score, msi_high_threshold
+    msi_status_probabilistic = classify_msi_status(msi_score_probabilistic, msi_high_threshold)
+    msi_status_expected = classify_msi_status(msi_score_expected, msi_high_threshold)
+    msi_status_deterministic = classify_msi_status(
+        msi_score_deterministic, msi_high_threshold
     )
 
     # Base uncertainty calculations
-    unstable_regions_uncertainty = sum(region_unstable_uncertainties) ** 0.5
-    absolute_uncertainty, overall_uncertainty = propagate_uncertainties(
+    uncertainty_regions_probabilistic = sum(region_unstable_uncertainties) ** 0.5
+    uncertainty_unstable_expected, _ = propagate_uncertainties(
         region_variances, total_regions
     )
-    expected_variants_uncertainty = absolute_uncertainty
+    #TODO: ONE VAR PROPER NAMING
+    uncertainty_variants_expected = uncertainty_unstable_expected
 
     # MSI score uncertainties
-    msi_score_statistical_uncertainty = (
-        (unstable_regions_uncertainty / total_regions) * 100
+    uncertainty_msi_score_probabilistic = (
+        (uncertainty_regions_probabilistic / total_regions) * 100
         if total_regions > 0
         else 0.0
     )
-    expected_msi_score_uncertainty = (
-        (absolute_uncertainty / total_regions) * 100 if total_regions > 0 else 0.0
+    uncertainty_msi_score_expected = (
+        (uncertainty_unstable_expected / total_regions) * 100 if total_regions > 0 else 0.0
     )
 
     # Impact and range calculations
-    analysis_impact = abs(msi_score - deterministic_msi_score)
-    msi_score_range = [
-        min(msi_score, deterministic_msi_score),
-        max(msi_score, deterministic_msi_score),
+    impact_msi_score_probabilistic_vs_deterministic = abs(msi_score_probabilistic - msi_score_deterministic)
+    range_msi_score_probabilistic_vs_deterministic = [
+        min(msi_score_probabilistic, msi_score_deterministic),
+        max(msi_score_probabilistic, msi_score_deterministic),
     ]
-    expected_unstable_impact = abs(expected_unstable_regions - regions_with_variants)
-    expected_unstable_range = [
-        min(expected_unstable_regions, regions_with_variants),
-        max(expected_unstable_regions, regions_with_variants),
+    impact_unstable_expected_vs_deterministic = abs(regions_unstable_expected - regions_with_variants)
+    range_unstable_expected_vs_deterministic = [
+        min(regions_unstable_expected, regions_with_variants),
+        max(regions_unstable_expected, regions_with_variants),
     ]
 
     # MSI variants calculations
-    deterministic_msi_variants = total_variants
-    msi_variants_impact = abs(expected_msi_variants - deterministic_msi_variants)
-    msi_variants_range = [
-        min(expected_msi_variants, deterministic_msi_variants),
-        max(expected_msi_variants, deterministic_msi_variants),
+    impact_variants_expected_vs_deterministic = abs(variants_expected - variants_deterministic)
+    range_variants_expected_vs_deterministic = [
+        min(variants_expected, variants_deterministic),
+        max(variants_expected, variants_deterministic),
     ]
 
     # Region breakdown calculations
-    deterministic_stable_regions = (
+    regions_stable_deterministic = (
         total_regions - regions_with_variants - uncertain_regions
     )
-    probabilistic_stable_regions = total_regions - unstable_count - uncertain_regions
-    deterministic_unstable_regions = regions_with_variants
+    regions_stable_probabilistic = total_regions - regions_unstable_probabilistic - uncertain_regions
 
     return {
         # CORE MSI SCORE CALCULATIONS
-        "msi_score_probabilistic": round(msi_score, 2),
-        "msi_score_expected": round(expected_msi_score, 2),
-        "msi_score_deterministic": round(deterministic_msi_score, 2),
+        "msi_score_probabilistic": round(msi_score_probabilistic, 2),
+        "msi_score_expected": round(msi_score_expected, 2),
+        "msi_score_deterministic": round(msi_score_deterministic, 2),
         # MSI STATUS CLASSIFICATIONS
-        "msi_status_probabilistic": msi_status,
-        "msi_status_expected": expected_msi_status,
-        "msi_status_deterministic": deterministic_msi_status,
+        "msi_status_probabilistic": msi_status_probabilistic,
+        "msi_status_expected": msi_status_expected,
+        "msi_status_deterministic": msi_status_deterministic,
         # BASE UNCERTAINTY CALCULATIONS
-        "uncertainty_variants_expected": round(expected_variants_uncertainty, 2),
-        "uncertainty_unstable_expected": round(absolute_uncertainty, 2),
+        "uncertainty_variants_expected": round(uncertainty_variants_expected, 2),
+        "uncertainty_unstable_expected": round(uncertainty_unstable_expected, 2),
         # MSI SCORE UNCERTAINTIES
         "uncertainty_msi_score_probabilistic": round(
-            msi_score_statistical_uncertainty, 3
+            uncertainty_msi_score_probabilistic, 3
         ),
-        "uncertainty_msi_score_expected": round(expected_msi_score_uncertainty, 3),
+        "uncertainty_msi_score_expected": round(uncertainty_msi_score_expected, 3),
         # IMPACT AND RANGE CALCULATIONS
-        "impact_msi_score_probabilistic_vs_deterministic": round(analysis_impact, 2),
-        "range_msi_score_probabilistic_vs_deterministic": msi_score_range,
-        "impact_unstable_expected_vs_deterministic": round(expected_unstable_impact, 1),
-        "range_unstable_expected_vs_deterministic": expected_unstable_range,
+        "impact_msi_score_probabilistic_vs_deterministic": round(impact_msi_score_probabilistic_vs_deterministic, 2),
+        "range_msi_score_probabilistic_vs_deterministic": range_msi_score_probabilistic_vs_deterministic,
+        "impact_unstable_expected_vs_deterministic": round(impact_unstable_expected_vs_deterministic, 1),
+        "range_unstable_expected_vs_deterministic": range_unstable_expected_vs_deterministic,
         # MSI VARIANTS CALCULATIONS
-        "variants_expected": round(expected_msi_variants, 2),
-        "variants_deterministic": deterministic_msi_variants,
-        "impact_variants_expected_vs_deterministic": round(msi_variants_impact, 2),
-        "range_variants_expected_vs_deterministic": msi_variants_range,
+        "variants_expected": round(variants_expected, 2),
+        "variants_deterministic": variants_deterministic,
+        "impact_variants_expected_vs_deterministic": round(impact_variants_expected_vs_deterministic, 2),
+        "range_variants_expected_vs_deterministic": range_variants_expected_vs_deterministic,
         # REGION BREAKDOWN CALCULATIONS
         # 1. Basic region counts
         "total_regions": total_regions,
         "regions_with_variants": regions_with_variants,
-        "regions_without_variants": total_regions - regions_with_variants,
         "uncertain_regions": uncertain_regions,
         # 2. Method-specific region counts
-        "regions_unstable_probabilistic": unstable_count,
-        "regions_unstable_expected": round(expected_unstable_regions, 2),
-        "regions_unstable_deterministic": deterministic_unstable_regions,
-        "regions_stable_probabilistic": probabilistic_stable_regions,
-        "regions_stable_deterministic": deterministic_stable_regions,
+        "regions_unstable_probabilistic": regions_unstable_probabilistic,
+        "regions_unstable_expected": round(regions_unstable_expected, 2),
+        "regions_unstable_deterministic": regions_with_variants,
+        "regions_stable_probabilistic": regions_stable_probabilistic,
+        "regions_stable_deterministic": regions_stable_deterministic,
     }
 
 
@@ -987,11 +984,6 @@ def run_af_evolution_analysis(
 
         results[sample_name] = sample_results
 
-        af_scores = [sample_results[f"af_{af}"]["msi_score"] for af in af_thresholds]
-        print(
-            f"[AF-EVOLUTION] {sample_name} evolution: {af_thresholds[0]}→{af_thresholds[-1]}: {af_scores[0]:.1f}%→{af_scores[-1]:.1f}%"
-        )
-
     print("[AF-EVOLUTION] AF evolution analysis complete")
     return results
 
@@ -1011,7 +1003,7 @@ def debug_af_filtering_discrepancy(
         if variants:
             distribution = run_msi_dp(variants)
             p_unstable = calculate_p_unstable(distribution)
-            if p_unstable > unstable_threshold:
+            if p_unstable >= unstable_threshold:
                 regional_unstable_regions.append(region_id)
 
     # AF >= 0.0 analysis regions
@@ -1023,7 +1015,7 @@ def debug_af_filtering_discrepancy(
         if filtered_variants:
             distribution = run_msi_dp(filtered_variants)
             p_unstable = calculate_p_unstable(distribution)
-            if p_unstable > unstable_threshold:
+            if p_unstable >= unstable_threshold:
                 af_0_unstable_regions.append(region_id)
 
     # Find the difference
