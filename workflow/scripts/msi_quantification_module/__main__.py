@@ -158,7 +158,7 @@ def main():
         print("Cannot run regional DP - data preparation failed")
 
     #TODO: Implement debug AF filtering discrepancy
-    debug_af_filtering_discrepancy(dp_result, total_ms_regions)
+    # debug_af_filtering_discrepancy(dp_result, total_ms_regions)
 
     output_data = {
         "analysis_info": {
@@ -178,18 +178,19 @@ def main():
 
     print(f"MSI analysis complete! Results saved to {args.output}")
 
-    write_complete_debug_log(
-        args.debug_log,
-        variants,
-        regions,
-        results,
-        total_regions_loaded,
-        args,
-        filter_stats,
-        unprocessed_count,
-        merged_count,
-        {"regional_analysis": regional_results},
-    )
+    #TODO:ACTIVATE DEBUG LOGGING
+    # write_complete_debug_log(
+    #     args.debug_log,
+    #     variants,
+    #     regions,
+    #     results,
+    #     total_regions_loaded,
+    #     args,
+    #     filter_stats,
+    #     unprocessed_count,
+    #     merged_count,
+    #     {"regional_analysis": regional_results},
+    # )
 
     msi_data = create_msi_quantification(results)
 
@@ -198,7 +199,8 @@ def main():
             json.dump(msi_data, f, indent=2)
     print(f"Quantification data saved to: {args.quantification_output}")
 
-    generate_msi_html_report(regional_results, af_evolution_results, msi_data, args.html_report)
+    #TODO: ACTIVATE HTML REPORT GENERATION
+    # generate_msi_html_report(regional_results, af_evolution_results, msi_data, args.html_report)
 
     print(f"Debug log: {args.debug_log}")
     print(f"HTML report: {args.html_report}")
