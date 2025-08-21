@@ -8,7 +8,6 @@ Outputs:
 Provides uncertainty quantification for MSI scores, unstable regions, and variants.
 """
 
-from importlib.metadata import distribution
 from typing import Dict, List, Optional, Tuple, Union
 
 import pysam
@@ -18,40 +17,40 @@ import pysam
 #####################################################################################
 
 
-def validate_probabilities(
-    pp: Optional[float], pa: Optional[float], art: Optional[float]
-) -> Tuple[bool, List[str]]:
-    """
-    Validate probability values for present, absent, and artifact states.
+# def validate_probabilities(
+#     pp: Optional[float], pa: Optional[float], art: Optional[float]
+# ) -> Tuple[bool, List[str]]:
+#     """
+#     Validate probability values for present, absent, and artifact states.
 
-    Args:
-        pp: Probability present (0-1 or None)
-        pa: Probability absent (0-1 or None)
-        art: Probability artifact (0-1 or None)
+#     Args:
+#         pp: Probability present (0-1 or None)
+#         pa: Probability absent (0-1 or None)
+#         art: Probability artifact (0-1 or None)
 
-    Returns:
-        Tuple of (is_valid, error_list)
+#     Returns:
+#         Tuple of (is_valid, error_list)
 
-    Note:
-        Uses 0.005 tolerance for floating-point precision in PHRED-to-probability conversion.
-    """
-    errors = []
+#     Note:
+#         Uses 0.005 tolerance for floating-point precision in PHRED-to-probability conversion.
+#     """
+#     errors = []
 
-    for name, value in [("present", pp), ("absent", pa), ("artifact", art)]:
-        if value is not None:
-            if not isinstance(value, (int, float)):
-                errors.append(f"invalid_type_{name}")
-                continue
-            if value < 0 or value > 1:
-                errors.append(f"invalid_range_{name}_{value}")
+#     for name, value in [("present", pp), ("absent", pa), ("artifact", art)]:
+#         if value is not None:
+#             if not isinstance(value, (int, float)):
+#                 errors.append(f"invalid_type_{name}")
+#                 continue
+#             if value < 0 or value > 1:
+#                 errors.append(f"invalid_range_{name}_{value}")
 
-    known_values = [x for x in [pp, pa, art] if x is not None]
-    if known_values:
-        known_sum = sum(known_values)
-        if known_sum > 1.005:
-            errors.append(f"sum_exceeds_1.0_{known_sum:.6f}")
+#     known_values = [x for x in [pp, pa, art] if x is not None]
+#     if known_values:
+#         known_sum = sum(known_values)
+#         if known_sum > 1.005:
+#             errors.append(f"sum_exceeds_1.0_{known_sum:.6f}")
 
-    return len(errors) == 0, errors
+#     return len(errors) == 0, errors
 
 
 def validate_af_value(
@@ -196,11 +195,14 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
     """
     Data Preparation Function for Dynamic Programming Analysis.
 
-    #TODO: PERFORMANCE OPTIMIZATION CONSIDERATION
-    # Current: Separate loops of same kind (data prep + imputation)
-    # Future: Consider merging into single func with AF logic
-    # Trade-off: Performance gain vs code clarity/maintainability
-    # State: Profile first, optimize only if bottleneck identified
+    #TODO: ARCHITECTURE OPTIMIZATION - Move data preparation upstream
+    # Current: Core analysis → DP preparation → DP analysis (3 stages)
+    # Alternative: Integrate DP data preparation into analyze_variant_in_region()
+    # or bin based intersection upstream in core analysis.
+    # Benefits: Single-pass processing, eliminate separate preparation stage
+    # Trade-off: Core analysis becomes heavier vs current clean separation
+    # Note: Requires passing sample_list to core analysis
+    # State: Current separation provides good modularity, optimize only if bottleneck confirmed
     """
 
     print("[DP-ENTRY] Starting data preparation for dynamic programming analysis")
@@ -590,6 +592,9 @@ def calculate_msi_metrics_for_regions(
     region_variances = []
     region_unstable_uncertainties = []
 
+    # Fragile regions counting
+    fragile_regions_count = 0
+
     for _, variants in regions_dict.items():
         if variants:
             regions_with_variants += 1
@@ -612,6 +617,11 @@ def calculate_msi_metrics_for_regions(
             bernoulli_variance = p_unstable * (1 - p_unstable)
             region_unstable_uncertainties.append(bernoulli_variance)
 
+            # Fragile region counting
+            if abs(p_unstable - unstable_threshold) <= 0.05:
+                fragile_regions_count += 1
+
+
     # Core MSI score calculations
     msi_score_probabilistic = (regions_unstable_probabilistic / total_regions) * 100 if total_regions > 0 else 0.0
     msi_score_expected = (
@@ -629,19 +639,18 @@ def calculate_msi_metrics_for_regions(
     )
 
     # Base uncertainty calculations
-    uncertainty_regions_probabilistic = sum(region_unstable_uncertainties) ** 0.5
-    uncertainty_unstable_expected, _ = propagate_uncertainties(
-        region_variances, total_regions
-    )
-    #TODO: ONE VAR PROPER NAMING
-    uncertainty_variants_expected = uncertainty_unstable_expected
+    uncertainty_unstable_expected = sum(region_unstable_uncertainties) ** 0.5
+    uncertainty_variants_expected, _ = propagate_uncertainties(region_variances, total_regions)
+
+    # Probabilistic method: Fragility analysis
+    score_per_region_probabilistic = 100.0 / total_regions
+    uncertainty_swing_probabilistic = fragile_regions_count * score_per_region_probabilistic
+    uncertainty_range_probabilistic = [
+        max(0.0, msi_score_probabilistic - uncertainty_swing_probabilistic),
+        min(100.0, msi_score_probabilistic + uncertainty_swing_probabilistic)
+    ]
 
     # MSI score uncertainties
-    uncertainty_msi_score_probabilistic = (
-        (uncertainty_regions_probabilistic / total_regions) * 100
-        if total_regions > 0
-        else 0.0
-    )
     uncertainty_msi_score_expected = (
         (uncertainty_unstable_expected / total_regions) * 100 if total_regions > 0 else 0.0
     )
@@ -683,10 +692,12 @@ def calculate_msi_metrics_for_regions(
         # BASE UNCERTAINTY CALCULATIONS
         "uncertainty_variants_expected": round(uncertainty_variants_expected, 2),
         "uncertainty_unstable_expected": round(uncertainty_unstable_expected, 2),
+        # Probabilistic method uncertainty (fragility analysis)
+        "fragile_regions_count": fragile_regions_count,
+        "uncertainty_swing_msi_score_probabilistic": round(uncertainty_swing_probabilistic, 3),
+        "uncertainty_range_msi_score_probabilistic": [round(x, 2) for x in uncertainty_range_probabilistic],
+        "uncertainty_explanation_probabilistic": f"+/-{fragile_regions_count} regions within 0.05 of threshold",
         # MSI SCORE UNCERTAINTIES
-        "uncertainty_msi_score_probabilistic": round(
-            uncertainty_msi_score_probabilistic, 3
-        ),
         "uncertainty_msi_score_expected": round(uncertainty_msi_score_expected, 3),
         # IMPACT AND RANGE CALCULATIONS
         "impact_msi_score_probabilistic_vs_deterministic": round(impact_msi_score_probabilistic_vs_deterministic, 2),
