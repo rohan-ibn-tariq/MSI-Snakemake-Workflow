@@ -666,6 +666,34 @@ def calculate_msi_metrics_for_regions(
         min(regions_unstable_expected, regions_with_variants),
         max(regions_unstable_expected, regions_with_variants),
     ]
+    range_msi_score_expected_uncertainty = [
+        round(max(0.0, msi_score_expected - uncertainty_msi_score_expected), 2),
+        round(min(100.0, msi_score_expected + uncertainty_msi_score_expected), 2)
+    ]
+    range_msi_score_overall_uncertainty = [
+        round(min(uncertainty_range_probabilistic[0], range_msi_score_expected_uncertainty[0], msi_score_deterministic), 2),
+        round(max(uncertainty_range_probabilistic[1], range_msi_score_expected_uncertainty[1], msi_score_deterministic), 2)
+    ]
+    range_unstable_expected_uncertainty = [
+        round(max(0.0, regions_unstable_expected - uncertainty_unstable_expected), 1),
+        round(regions_unstable_expected + uncertainty_unstable_expected, 1)
+    ]
+    range_unstable_probabilistic_fragility = [
+        max(0, regions_unstable_probabilistic - fragile_regions_count),
+        regions_unstable_probabilistic + fragile_regions_count
+    ]
+    range_unstable_overall_uncertainty = [
+        min(range_unstable_expected_uncertainty[0], range_unstable_probabilistic_fragility[0], regions_with_variants),
+        max(range_unstable_expected_uncertainty[1], range_unstable_probabilistic_fragility[1], regions_with_variants)
+    ]
+    range_variants_expected_uncertainty = [
+        round(max(0.0, variants_expected - uncertainty_variants_expected), 2),
+        round(variants_expected + uncertainty_variants_expected, 2)
+    ]
+    range_variants_overall_uncertainty = [
+        round(min(range_variants_expected_uncertainty[0], variants_deterministic), 2),
+        round(max(range_variants_expected_uncertainty[1], variants_deterministic), 2)
+    ]
 
     # MSI variants calculations
     impact_variants_expected_vs_deterministic = abs(variants_expected - variants_deterministic)
@@ -702,13 +730,20 @@ def calculate_msi_metrics_for_regions(
         # IMPACT AND RANGE CALCULATIONS
         "impact_msi_score_probabilistic_vs_deterministic": round(impact_msi_score_probabilistic_vs_deterministic, 2),
         "range_msi_score_probabilistic_vs_deterministic": range_msi_score_probabilistic_vs_deterministic,
+        "range_msi_score_expected_uncertainty": range_msi_score_expected_uncertainty,
+        "range_msi_score_overall_uncertainty": range_msi_score_overall_uncertainty,
         "impact_unstable_expected_vs_deterministic": round(impact_unstable_expected_vs_deterministic, 1),
         "range_unstable_expected_vs_deterministic": range_unstable_expected_vs_deterministic,
+        "range_unstable_expected_uncertainty": range_unstable_expected_uncertainty,
+        "range_unstable_probabilistic_fragility": range_unstable_probabilistic_fragility,
+        "range_unstable_overall_uncertainty": range_unstable_overall_uncertainty,
         # MSI VARIANTS CALCULATIONS
         "variants_expected": round(variants_expected, 2),
         "variants_deterministic": variants_deterministic,
         "impact_variants_expected_vs_deterministic": round(impact_variants_expected_vs_deterministic, 2),
         "range_variants_expected_vs_deterministic": range_variants_expected_vs_deterministic,
+        "range_variants_expected_uncertainty": range_variants_expected_uncertainty,
+        "range_variants_overall_uncertainty": range_variants_overall_uncertainty,
         # REGION BREAKDOWN CALCULATIONS
         # 1. Basic region counts
         "total_regions": total_regions,

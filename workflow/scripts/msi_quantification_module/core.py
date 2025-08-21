@@ -210,11 +210,6 @@ def analyze_variant_in_region(variant_data, region_data):
         pa = variant_data.get("prob_absent") 
         art = variant_data.get("prob_artifact")
         
-        #NOTE: DEBUG line:
-        if pp is None or pa is None or art is None:
-            print(f"DEBUG: Missing probs - pp={pp}, pa={pa}, art={art} for variant {variant_data.get('variant_id')}")
-            print(f"DEBUG: Available keys: {list(variant_data.keys())}")
-        
         if pp is None or pa is None or art is None:
             repeat_status = "N/A"
             uncertainty_reason = "missing_probabilities"
