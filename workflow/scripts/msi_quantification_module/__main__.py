@@ -135,16 +135,7 @@ def main():
     dp_result = prepare_variants_for_dp(results, args.vcf)
 
     
-    if "error" not in dp_result and dp_result.get("ready_for_dp"):
-        print("Running regional DP analysis...")
-
-        regional_results = run_regional_msi_analysis(
-            dp_result,
-            total_ms_regions,
-            unstable_threshold=args.unstable_threshold,
-            msi_high_threshold=args.msi_high_threshold,
-        )
-        
+    if "error" not in dp_result and dp_result.get("ready_for_dp"):        
         print("Running AF evolution analysis...")
     
         af_evolution_results = run_af_evolution_analysis(
@@ -169,7 +160,6 @@ def main():
         },
         # "region_results": results,
         "region_results": dp_result,
-        "regional_analysis": regional_results,
         "af_evolution_results": af_evolution_results,
     }
 
@@ -179,20 +169,20 @@ def main():
     print(f"MSI analysis complete! Results saved to {args.output}")
 
     #TODO:ACTIVATE DEBUG LOGGING
-    write_complete_debug_log(
-        args.debug_log,
-        variants,
-        regions,
-        results,
-        total_regions_loaded,
-        args,
-        filter_stats,
-        unprocessed_count,
-        merged_count,
-        {"regional_analysis": regional_results,
-        "af_evolution_results": af_evolution_results,
-        },
-    )
+    # write_complete_debug_log(
+    #     args.debug_log,
+    #     variants,
+    #     regions,
+    #     results,
+    #     total_regions_loaded,
+    #     args,
+    #     filter_stats,
+    #     unprocessed_count,
+    #     merged_count,
+    #     {"regional_analysis": regional_results,
+    #     "af_evolution_results": af_evolution_results,
+    #     },
+    # )
 
     msi_data = create_msi_quantification(results)
 
