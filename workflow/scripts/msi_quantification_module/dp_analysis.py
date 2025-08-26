@@ -709,6 +709,7 @@ def calculate_msi_metrics_for_regions(
     regions_stable_probabilistic = total_regions - regions_unstable_probabilistic - uncertain_regions
 
     return {
+        #TODO: BETTER NESTED STRUCTURE
         # CORE MSI SCORE CALCULATIONS
         "msi_score_probabilistic": round(msi_score_probabilistic, 2),
         "msi_score_expected": round(msi_score_expected, 2),
@@ -755,6 +756,11 @@ def calculate_msi_metrics_for_regions(
         "regions_unstable_deterministic": regions_with_variants,
         "regions_stable_probabilistic": regions_stable_probabilistic,
         "regions_stable_deterministic": regions_stable_deterministic,
+        # Analysis Parameters
+        "analysis_parameters": {
+            "unstable_threshold": unstable_threshold,
+            "msi_high_threshold": msi_high_threshold,
+        }
     }
 
 
