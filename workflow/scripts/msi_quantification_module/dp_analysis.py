@@ -16,43 +16,6 @@ import pysam
 ################## DATA QUALITY VALIDATION & IMPUTATION FUNCTIONS ###################
 #####################################################################################
 
-
-# def validate_probabilities(
-#     pp: Optional[float], pa: Optional[float], art: Optional[float]
-# ) -> Tuple[bool, List[str]]:
-#     """
-#     Validate probability values for present, absent, and artifact states.
-
-#     Args:
-#         pp: Probability present (0-1 or None)
-#         pa: Probability absent (0-1 or None)
-#         art: Probability artifact (0-1 or None)
-
-#     Returns:
-#         Tuple of (is_valid, error_list)
-
-#     Note:
-#         Uses 0.005 tolerance for floating-point precision in PHRED-to-probability conversion.
-#     """
-#     errors = []
-
-#     for name, value in [("present", pp), ("absent", pa), ("artifact", art)]:
-#         if value is not None:
-#             if not isinstance(value, (int, float)):
-#                 errors.append(f"invalid_type_{name}")
-#                 continue
-#             if value < 0 or value > 1:
-#                 errors.append(f"invalid_range_{name}_{value}")
-
-#     known_values = [x for x in [pp, pa, art] if x is not None]
-#     if known_values:
-#         known_sum = sum(known_values)
-#         if known_sum > 1.005:
-#             errors.append(f"sum_exceeds_1.0_{known_sum:.6f}")
-
-#     return len(errors) == 0, errors
-
-
 def validate_af_value(
     af_value: Union[float, int, str, None], sample_name: str
 ) -> Tuple[Union[float, int], List[str]]:
@@ -762,39 +725,6 @@ def calculate_msi_metrics_for_regions(
             "msi_high_threshold": msi_high_threshold,
         }
     }
-
-
-def run_regional_msi_analysis(
-    dp_ready_data: Dict,
-    total_ms_regions_from_bed: int,
-    unstable_threshold: float = 0.5,
-    msi_high_threshold: float = 3.5,
-) -> Dict:
-    """
-    Run genome-wide regional MSI analysis using dynamic programming approach.
-
-    Wrapper function that calls calculate_msi_metrics_for_regions() with
-    genome-wide data from prepare_variants_for_dp().
-
-    Args:
-        dp_ready_data: Prepared data from prepare_variants_for_dp()
-        total_ms_regions_from_bed: Total microsatellite regions from BED file
-        unstable_threshold: P(≥1 MSI) threshold for region classification (default: 0.5)
-        msi_high_threshold: MSI score threshold for MSI-High classification (default: 3.5)
-
-    Returns:
-        Dict: Complete MSI analysis results from calculate_msi_metrics_for_regions()
-    """
-    print("[REGIONAL-DP] Starting regional MSI analysis")
-
-    return calculate_msi_metrics_for_regions(
-        dp_ready_data["regions"],
-        total_ms_regions_from_bed,
-        dp_ready_data.get("total_uncertain_regions", 0),
-        dp_ready_data["total_variants"],
-        unstable_threshold,
-        msi_high_threshold,
-    )
 
 
 def filter_variants_by_af_and_sample(
