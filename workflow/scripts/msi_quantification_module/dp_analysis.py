@@ -401,17 +401,12 @@ def calculate_msi_metrics_for_regions(
     region_probabilities = []
     regions_with_variants = 0
     for _, variants in regions_dict.items():
-        if variants:
-            regions_with_variants += 1
-            p_zero = 1.0
-            for variant in variants:
-                p_zero *= variant["dp_data"]["p_absent"]
-            region_probabilities.append(1 - p_zero)
-        else:
-            region_probabilities.append(0.0)
+        p_zero = 1.0
+        for variant in variants:
+            p_zero *= variant["dp_data"]["p_absent"]
+        region_probabilities.append(1 - p_zero)
 
-    # Effective total = regions that actually contribute
-    effective_total = len(region_probabilities)
+    regions_with_variants = len(region_probabilities)
 
     # Build distribution of unstable counts using DP
     if region_probabilities:
@@ -447,7 +442,6 @@ def calculate_msi_metrics_for_regions(
     return {
         # Counts / reporting
         "total_regions": total_regions,
-        "effective_total_regions": effective_total,
         "regions_with_variants": regions_with_variants,
         "uncertain_regions": uncertain_regions,
 
@@ -463,46 +457,6 @@ def calculate_msi_metrics_for_regions(
             "msi_high_threshold": msi_high_threshold,
         },
     }
-
-
-# def filter_variants_by_af_and_sample(
-#     variants: List[Dict], af_threshold: float, sample_name: str
-# ) -> List[Dict]:
-#     """
-#     Filter variants by AF threshold for a specific sample.
-
-#     Args:
-#         variants: List of variants in a region
-#         af_threshold: Minimum AF threshold
-#         sample_name: Sample to filter for
-
-#     Returns:
-#         List of variants that meet AF threshold for this sample
-
-#     #TODO: AF PRE-COMPUTATION OPTIMIZATION
-#     # Current: This function called repeatedly in nested loops (samples × thresholds × regions)
-#     # Results in ~n+ filtering operations for same data
-#     # Alternative: Pre-compute all AF-filtered combinations in prepare_variants_for_dp()
-#     # Trade-off: ~x% performance gain vs z×-y× memory increase
-#     # State: Current lazy evaluation chosen for memory efficiency and scalability
-#     """
-#     filtered_variants = []
-
-#     for variant in variants:
-#         af_by_sample = variant["dp_data"]["af_by_sample"]
-#         sample_af = af_by_sample[sample_name]
-
-#         if af_threshold == -1:
-#             if sample_af == -1:
-#                 filtered_variants.append(variant)
-#         elif af_threshold == -2:
-#             if sample_af == -2:
-#                 filtered_variants.append(variant)
-#         else:
-#             if sample_af >= af_threshold:
-#                 filtered_variants.append(variant)
-
-#     return filtered_variants
 
 
 def filter_variants_by_af_and_sample(
@@ -611,7 +565,7 @@ def run_af_evolution_analysis(
                 f"[DEBUG] {sample_name} | AF={af_threshold} | "
                 f"k_map={metrics['k_map']} | "
                 f"MSI%={metrics['msi_score_map']} | "
-                f"Regions={metrics['effective_total_regions']}/{metrics['total_regions']} "
+                f"Regions={metrics['regions_with_variants']}/{metrics['total_regions']} "
                 f"(uncertain={uncertain_regions})"
             )
 
