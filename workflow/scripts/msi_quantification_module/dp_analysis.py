@@ -465,6 +465,46 @@ def calculate_msi_metrics_for_regions(
     }
 
 
+# def filter_variants_by_af_and_sample(
+#     variants: List[Dict], af_threshold: float, sample_name: str
+# ) -> List[Dict]:
+#     """
+#     Filter variants by AF threshold for a specific sample.
+
+#     Args:
+#         variants: List of variants in a region
+#         af_threshold: Minimum AF threshold
+#         sample_name: Sample to filter for
+
+#     Returns:
+#         List of variants that meet AF threshold for this sample
+
+#     #TODO: AF PRE-COMPUTATION OPTIMIZATION
+#     # Current: This function called repeatedly in nested loops (samples × thresholds × regions)
+#     # Results in ~n+ filtering operations for same data
+#     # Alternative: Pre-compute all AF-filtered combinations in prepare_variants_for_dp()
+#     # Trade-off: ~x% performance gain vs z×-y× memory increase
+#     # State: Current lazy evaluation chosen for memory efficiency and scalability
+#     """
+#     filtered_variants = []
+
+#     for variant in variants:
+#         af_by_sample = variant["dp_data"]["af_by_sample"]
+#         sample_af = af_by_sample[sample_name]
+
+#         if af_threshold == -1:
+#             if sample_af == -1:
+#                 filtered_variants.append(variant)
+#         elif af_threshold == -2:
+#             if sample_af == -2:
+#                 filtered_variants.append(variant)
+#         else:
+#             if sample_af >= af_threshold:
+#                 filtered_variants.append(variant)
+
+#     return filtered_variants
+
+
 def filter_variants_by_af_and_sample(
     variants: List[Dict], af_threshold: float, sample_name: str
 ) -> List[Dict]:
@@ -487,22 +527,24 @@ def filter_variants_by_af_and_sample(
     # State: Current lazy evaluation chosen for memory efficiency and scalability
     """
     filtered_variants = []
-
+    additional_uncertain = 0
+    
+    variants_meeting_threshold = []
+    variants_with_missing_af = []
+    
     for variant in variants:
-        af_by_sample = variant["dp_data"]["af_by_sample"]
-        sample_af = af_by_sample[sample_name]
-
-        if af_threshold == -1:
-            if sample_af == -1:
-                filtered_variants.append(variant)
-        elif af_threshold == -2:
-            if sample_af == -2:
-                filtered_variants.append(variant)
-        else:
-            if sample_af >= af_threshold:
-                filtered_variants.append(variant)
-
-    return filtered_variants
+        sample_af = variant["dp_data"]["af_by_sample"][sample_name]
+        if sample_af >= af_threshold:
+            filtered_variants.append(variant)
+            variants_meeting_threshold.append(variant)
+        elif sample_af == -1:
+            variants_with_missing_af.append(variant)
+    
+    # If region has missing AF variants but no variants meeting threshold
+    if not variants_meeting_threshold and variants_with_missing_af:
+        additional_uncertain = 1
+    
+    return filtered_variants, additional_uncertain
 
 
 def run_af_evolution_analysis(
@@ -533,19 +575,25 @@ def run_af_evolution_analysis(
     samples = dp_ready_data["samples"]
     af_thresholds = dp_ready_data["af_thresholds"]
 
+    valid_af_thresholds = [t for t in af_thresholds if t >= 0.0]
+
     for sample_name in samples:
         print(f"[AF-EVOLUTION] Analyzing sample: {sample_name}")
         sample_results = {}
 
-        for af_threshold in af_thresholds:
+        for af_threshold in valid_af_thresholds:
             filtered_regions = {}
+            total_additional_uncertain = 0 #TODO: TEST
+
             for region_id, variants in dp_ready_data["regions"].items():
-                filtered_variants = filter_variants_by_af_and_sample(variants, af_threshold, sample_name)
+                filtered_variants, uncertain_adjustment = filter_variants_by_af_and_sample(variants, af_threshold, sample_name)
+                total_additional_uncertain += uncertain_adjustment #TODO: TEST
+
                 if filtered_variants:
                     filtered_regions[region_id] = filtered_variants
 
             af_data = dp_ready_data["af_data_by_sample"][sample_name][af_threshold]
-            uncertain_regions = af_data["uncertain_regions"]
+            uncertain_regions = af_data["uncertain_regions"] + total_additional_uncertain
             #total_variants = af_data["variant_count"]
             
             # Use simplified metrics calculation  
