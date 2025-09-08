@@ -14,7 +14,7 @@ alt.data_transformers.disable_max_rows()
 
 
 def generate_msi_html_report(
-    regional_results, af_evolution_results, msi_data, output_path
+    af_evolution_results, msi_data, output_path, msi_high_threshold=3.5
 ):
     """
     Generate MSI quantification HTML report.
@@ -26,9 +26,9 @@ def generate_msi_html_report(
     af_distribution = create_af_distribution_chart(msi_data)
     motif_breakdown_chart = create_motif_breakdown_chart(msi_data)
 
-    # MSI Regional Analysis Charts & Summary Table
-    regional_uncertainty_chart = create_msi_score_uncertainty_chart(regional_results)
-    regional_breakdown_chart = create_region_count_breakdown_chart(regional_results)
+    msi_probability_chart = create_msi_probability_chart(af_evolution_results)
+    msi_evolution_chart = create_msi_evolution_chart(af_evolution_results, msi_high_threshold)
+
 
     scope = msi_data["data_scope"]
     overview = msi_data["overview"]
@@ -168,27 +168,12 @@ def generate_msi_html_report(
         Generated {timestamp}
     </div>
 
-    <!-- Regional MSI Analysis Dashboard -->
-    <div class="regional-dashboard">
-        <h2 style="color: #8b4513; font-weight: bold; font-size: 20px; margin: 40px 0 25px 0; text-align: left;">
-            Complete Genome-Wide Analysis
-        </h2>
-        
-        <div class="regional-charts">
-            <div class="regional-chart-container">
-                <div id="regional-uncertainty-chart"></div>
-            </div>
-            <div class="regional-chart-container">
-                <div id="regional-breakdown-chart"></div>
-            </div>
-            <div class="regional-chart-container">
-                <div id="regional-status-chart"></div>
-            </div>
+    <div class="charts">
+        <div class="chart-container">
+            <div id="msi-probability-chart"></div>
         </div>
-        
-        <!-- Regional analysis Summary Table -->
-        <div class="regional-table-placeholder">
-            <p><em>Regional analysis table coming next...</em></p>
+        <div class="chart-container">
+            <div id="msi-evolution-chart"></div>
         </div>
     </div>
 
@@ -324,11 +309,10 @@ def generate_msi_html_report(
         vegaEmbed('#indel-histogram', {indel_histogram.to_json()}, {{actions: false}});
         vegaEmbed('#af-chart', {af_distribution.to_json()}, {{actions: false}});
         vegaEmbed('#motif-chart', {motif_breakdown_chart.to_json()}, {{actions: false}});
-        
-        // Regional MSI Analysis Charts
-        vegaEmbed('#regional-uncertainty-chart', {regional_uncertainty_chart.to_json()}, {{actions: false}});
-        vegaEmbed('#regional-breakdown-chart', {regional_breakdown_chart.to_json()}, {{actions: false}});  // ADD THIS LINE
 
+        // Final charts
+        vegaEmbed('#msi-probability-chart', {msi_probability_chart.to_json()}, {{actions: false}});
+        vegaEmbed('#msi-evolution-chart', {msi_evolution_chart.to_json()}, {{actions: false}});
     </script>
 </body>
 </html>
@@ -526,174 +510,119 @@ def create_motif_breakdown_chart(msi_data):
     return chart
 
 
-def create_msi_score_uncertainty_chart(regional_results):
-    """3-bar MSI chart with tooltips - probabilistic, expected, deterministic"""
+def create_empty_chart(message, width=200, height=150, title="Chart"):
+    """Create consistent empty chart with report styling"""
+    return (
+        alt.Chart(pl.DataFrame([{"x": 0, "y": 0}]))
+        .mark_text(text=message, size=12, color="#666", fontStyle="italic")
+        .encode(x="x:Q", y="y:Q")
+        .properties(width=width, height=height, title=title)
+    )
 
-    try:
-        threshold_score = regional_results.get("msi_score", 0.0) or 0.0
-        threshold_uncertainty = (
-            regional_results.get("msi_score_statistical_uncertainty", 0.0) or 0.0
+
+def create_msi_probability_chart(af_evolution_results):
+    """Create MSI score vs posterior probability chart from AF 0.0 data"""
+    
+    if not af_evolution_results:
+        return create_empty_chart("No AF evolution data available", 400, 300, "MSI Score Distribution")
+    
+    sample_name = next(iter(af_evolution_results.keys()), None)
+    if not sample_name:
+        return create_empty_chart("No samples found", 400, 300, "MSI Score Distribution")
+    
+    sample_data = af_evolution_results[sample_name]
+    af_0_data = sample_data.get("af_0.0", {})
+    msi_data = af_0_data.get("msi_data", {})
+    
+    if not msi_data:
+        return create_empty_chart("No MSI probability data for AF 0.0", 400, 300, "MSI Score Distribution")
+    
+    chart_data = []
+    for k, data in msi_data.items():
+        chart_data.append({
+            "MSI_Score": data["msi_score"],
+            "Probability": data["probability"],
+            "k": int(k)
+        })
+    
+    chart = (
+        alt.Chart(pl.DataFrame(chart_data))
+        .mark_circle(size=50, opacity=0.7, color="#8b4513")
+        .encode(
+            x=alt.X("MSI_Score:Q", title="MSI Score (%)"),
+            y=alt.Y("Probability:Q", title="Posterior Probability"),
+            tooltip=[
+                alt.Tooltip("MSI_Score:Q", title="MSI Score (%)", format=".2f"),
+                alt.Tooltip("Probability:Q", title="Probability", format=".6f"),
+                alt.Tooltip("k:Q", title="k (unstable regions)")
+            ]
         )
-        deterministic_score = (
-            regional_results.get("msi_score_deterministic", 0.0) or 0.0
+        .properties(width=400, height=300, title="MSI Score Distribution (AF 0.0)")
+    )
+    
+    return chart
+
+
+def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
+    """Create MSI score evolution across AF thresholds with threshold line"""
+    
+    # Handle empty data
+    if not af_evolution_results:
+        return create_empty_chart("No AF evolution data available", 400, 300, "MSI Evolution")
+    
+    sample_name = next(iter(af_evolution_results.keys()), None)
+    if not sample_name:
+        return create_empty_chart("No samples found", 400, 300, "MSI Evolution")
+    
+    sample_data = af_evolution_results[sample_name]
+    
+    # Extract MSI scores across AF thresholds
+    chart_data = []
+    for af_key, af_data in sample_data.items():
+        if af_key.startswith("af_"):
+            try:
+                af_threshold = float(af_key.split("_")[1])
+                msi_score = af_data.get("msi_score_map", 0)
+                uncertain_regions = af_data.get("uncertain_regions", 0)
+                
+                chart_data.append({
+                    "AF_Threshold": af_threshold,
+                    "MSI_Score": msi_score,
+                    "Uncertain_Regions": uncertain_regions
+                })
+            except (ValueError, IndexError):
+                continue
+    
+    if not chart_data:
+        return create_empty_chart("No valid AF threshold data", 400, 300, "MSI Evolution")
+    
+    # MSI score line chart
+    line_chart = (
+        alt.Chart(pl.DataFrame(chart_data))
+        .mark_line(point=True, color="#8b4513", strokeWidth=3, interpolate="cardinal")
+        .encode(
+            x=alt.X("AF_Threshold:Q", title="AF Threshold"),
+            y=alt.Y("MSI_Score:Q", title="MSI Score (%)", scale=alt.Scale(domain=[0, max(10, max(d["MSI_Score"] for d in chart_data) + 1)])),
+            tooltip=[
+                alt.Tooltip("AF_Threshold:Q", title="AF Threshold"),
+                alt.Tooltip("MSI_Score:Q", title="MSI Score (%)", format=".2f"),
+                alt.Tooltip("Uncertain_Regions:Q", title="Uncertain Regions")
+            ]
         )
-        expected_score = regional_results.get("msi_score_expected", None)
-        expected_uncertainty = regional_results.get(
-            "msi_score_expected_uncertainty", None
+    )
+    
+    # MSI threshold line
+    threshold_line = (
+        alt.Chart(pl.DataFrame([{"threshold": msi_high_threshold}]))
+        .mark_rule(color="#d32f2f", strokeDash=[5, 5], strokeWidth=2)
+        .encode(
+            y=alt.Y("threshold:Q"),
+            tooltip=alt.value(f"MSI-High Threshold: {msi_high_threshold}%")
         )
-    except (TypeError, KeyError, AttributeError):
-        threshold_score = 0.0
-        threshold_uncertainty = 0.0
-        deterministic_score = 0.0
-        expected_score = None
-        expected_uncertainty = None
-
-    chart_data = [
-        {
-            "Method": "Probabilistic",
-            "Score": threshold_score,
-            "Uncertainty": (
-                f"±{threshold_uncertainty:.3f}%"
-                if threshold_uncertainty > 0
-                else "±0.000%"
-            ),
-            "Color": "#8b4513",
-        },
-        {
-            "Method": "Expected",
-            "Score": expected_score if expected_score is not None else 0.0,
-            "Uncertainty": (
-                f"±{expected_uncertainty:.3f}%" if expected_uncertainty else "Pending"
-            ),
-            "Color": "#daa520" if expected_score is not None else "#cccccc",
-        },
-        {
-            "Method": "Deterministic",
-            "Score": deterministic_score,
-            "Uncertainty": "±0.000%",
-            "Color": "#2f4f4f",
-        },
-    ]
-
-    try:
-        chart = (
-            alt.Chart(pl.DataFrame(chart_data))
-            .mark_bar(width=50)
-            .encode(
-                x=alt.X("Method:N", title="Analysis Method"),
-                y=alt.Y("Score:Q", title="MSI Score (%)"),
-                color=alt.Color(field="Color", type="nominal", scale=None),
-                tooltip=[
-                    alt.Tooltip("Method:N", title="Method"),
-                    alt.Tooltip("Score:Q", title="MSI Score (%)", format=".2f"),
-                    alt.Tooltip("Uncertainty:N", title="Uncertainty"),
-                ],
-            )
-            .properties(width=200, height=150, title="MSI Score Comparison")
-        )
-        return chart
-    except Exception:
-        return alt.Chart(pl.DataFrame([{"x": 0, "y": 0}])).mark_text(text="Chart Error")
-
-
-def create_region_count_breakdown_chart(regional_results):
-    """
-    Region count breakdown
-    """
-
-    try:
-        prob_unstable = regional_results.get("unstable_regions", 0) or 0
-        prob_stable = regional_results.get("probabilistic_stable_regions", 0) or 0
-
-        det_unstable = regional_results.get("regions_with_variants", 0) or 0
-        det_stable = regional_results.get("deterministic_stable_regions", 0) or 0
-
-        exp_unstable = regional_results.get("expected_unstable_regions", 0) or 0
-        uncertain = regional_results.get("uncertain_regions", 0) or 0
-
-        total_regions = regional_results.get("total_regions", 0) or 0
-        exp_stable = max(0, total_regions - exp_unstable - uncertain)
-
-    except (TypeError, KeyError, AttributeError):
-        prob_unstable = prob_stable = det_unstable = det_stable = exp_unstable = (
-            exp_stable
-        ) = uncertain = 0
-
-    chart_data = [
-        {
-            "Method": "Probabilistic",
-            "Type": "Unstable",
-            "Count": prob_unstable,
-            "Color": "#8b4513",
-        },
-        {
-            "Method": "Probabilistic",
-            "Type": "Stable",
-            "Count": prob_stable,
-            "Color": "#2f4f4f",
-        },
-        {
-            "Method": "Probabilistic",
-            "Type": "Uncertain",
-            "Count": uncertain,
-            "Color": "#daa520",
-        },
-        {
-            "Method": "Expected",
-            "Type": "Unstable",
-            "Count": exp_unstable,
-            "Color": "#8b4513",
-        },
-        {
-            "Method": "Expected",
-            "Type": "Stable",
-            "Count": exp_stable,
-            "Color": "#2f4f4f",
-        },
-        {
-            "Method": "Expected",
-            "Type": "Uncertain",
-            "Count": uncertain,
-            "Color": "#daa520",
-        },
-        {
-            "Method": "Deterministic",
-            "Type": "Unstable",
-            "Count": det_unstable,
-            "Color": "#8b4513",
-        },
-        {
-            "Method": "Deterministic",
-            "Type": "Stable",
-            "Count": det_stable,
-            "Color": "#2f4f4f",
-        },
-        {
-            "Method": "Deterministic",
-            "Type": "Uncertain",
-            "Count": uncertain,
-            "Color": "#daa520",
-        },
-    ]
-
-    try:
-        chart = (
-            alt.Chart(pl.DataFrame(chart_data))
-            .mark_bar(width=50)
-            .encode(
-                x=alt.X("Method:N", title="Analysis Method"),
-                y=alt.Y("Count:Q", title="Region Count", stack="zero"),
-                color=alt.Color(
-                    "Type:N", scale=alt.Scale(range=["#8b4513", "#2f4f4f", "#daa520"])
-                ),
-                tooltip=[
-                    alt.Tooltip("Method:N", title="Method"),
-                    alt.Tooltip("Type:N", title="Region Type"),
-                    alt.Tooltip("Count:Q", title="Count", format=","),
-                ],
-            )
-            .properties(width=200, height=150, title="Region Count Breakdown")
-        )
-        return chart
-    except Exception:
-        return alt.Chart(pl.DataFrame([{"x": 0, "y": 0}])).mark_text(text="Chart Error")
+    )
+    
+    combined_chart = (line_chart + threshold_line).properties(
+        width=400, height=300, title="MSI Score Evolution Across AF Thresholds"
+    )
+    
+    return combined_chart

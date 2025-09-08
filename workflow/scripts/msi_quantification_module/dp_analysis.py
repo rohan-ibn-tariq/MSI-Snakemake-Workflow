@@ -16,33 +16,21 @@ import pysam
 ################## DATA QUALITY VALIDATION & IMPUTATION FUNCTIONS ###################
 #####################################################################################
 
-def validate_af_value(
-    af_value: Union[float, int, str, None], sample_name: str
-) -> Tuple[Union[float, int], List[str]]:
+def validate_af_value(af_value: Union[float, int, str, None]) -> Union[float, int]:
     """
-    Validate and normalize AF value for a specific sample.
+    Validate and normalize AF value.
+    Trusts upstream validation for range and type checking.
 
     Args:
         af_value: Allele frequency value from VCF (float, int, str, or None)
-        sample_name: Sample identifier for error reporting
 
     Returns:
-        Tuple of (normalized_af, error_list)
-        - normalized_af: float (0.0-1.0), -1 (missing), or -2 (invalid)
-        - error_list: List of validation errors
+        float (0.0-1.0) or -1 (missing)
     """
     if af_value is None:
-        return -1, []  # Missing/null AF (biological uncertainty)
-
-    try:
-        af_float = float(af_value)
-        if af_float < 0:
-            return -2, [f"{sample_name}_negative_af_{af_float}"]  # Invalid data
-        if af_float > 1.0:
-            return -2, [f"{sample_name}_af_exceeds_1.0_{af_float}"]  # Invalid data
-        return af_float, []
-    except (ValueError, TypeError):
-        return -2, [f"{sample_name}_invalid_af_type"]  # Invalid data
+        return -1
+    
+    return float(af_value)
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -79,10 +67,8 @@ def process_variant_probabilities_and_af(variant: Dict) -> None:
     af_by_sample = {}
 
     for sample_name, af_value in sample_afs.items():
-        normalized_af, af_errors = validate_af_value(af_value, sample_name)
-
+        normalized_af = validate_af_value(af_value)
         af_by_sample[sample_name] = normalized_af
-        audit_trail["af_processing"]["af_errors"].extend(af_errors)
 
         if normalized_af == -1:
             audit_trail["af_processing"]["missing_af_samples"].append(sample_name)
@@ -125,7 +111,6 @@ def extract_af_data_for_variant(
         Dict[str, Union[float, int]]: AF values per sample where:
             - float (0.0-1.0): Valid AF value
             - -1: Missing/null AF (biological uncertainty)
-            - -2: Invalid AF data (technical error)
 
     Note:
         Only called for N/A variants to count uncertain regions in AF evolution.
@@ -139,7 +124,7 @@ def extract_af_data_for_variant(
     af_by_sample = {}
 
     for sample_name, af_value in sample_afs.items():
-        normalized_af, _ = validate_af_value(af_value, sample_name)
+        normalized_af = validate_af_value(af_value)
         af_by_sample[sample_name] = normalized_af
 
     for sample_name in sample_list:
@@ -176,7 +161,7 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
     vcf.close()
     print(f"[DP-PREP] Found samples in VCF: {sample_list}")
 
-    af_thresholds = [1.0, 0.8, 0.6, 0.4, 0.2, 0.0, -1, -2]
+    af_thresholds = [1.0, 0.8, 0.6, 0.4, 0.2, 0.0, -1]
 
     total_uncertain_regions = 0
 
@@ -213,7 +198,6 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
                         sample_af = af_data[sample_name]
                         if (
                             (af_threshold == -1 and sample_af == -1)
-                            or (af_threshold == -2 and sample_af == -2)
                             or (af_threshold >= 0 and sample_af >= af_threshold)
                         ):
                             region_has_variants_at_af_for_sample = True
@@ -241,7 +225,6 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
                     for af_threshold in af_thresholds:
                         if (
                             (af_threshold == -1 and sample_af == -1)
-                            or (af_threshold == -2 and sample_af == -2)
                             or (af_threshold >= 0 and sample_af >= af_threshold)
                         ):
                             af_data_by_sample[sample_name][af_threshold][
@@ -535,11 +518,11 @@ def run_af_evolution_analysis(
 
         for af_threshold in valid_af_thresholds:
             filtered_regions = {}
-            total_additional_uncertain = 0 #TODO: TEST
+            total_additional_uncertain = 0
 
             for region_id, variants in dp_ready_data["regions"].items():
                 filtered_variants, uncertain_adjustment = filter_variants_by_af_and_sample(variants, af_threshold, sample_name)
-                total_additional_uncertain += uncertain_adjustment #TODO: TEST
+                total_additional_uncertain += uncertain_adjustment
 
                 if filtered_variants:
                     filtered_regions[region_id] = filtered_variants
@@ -561,7 +544,7 @@ def run_af_evolution_analysis(
             )
 
             print(
-                f"[DEBUG] {sample_name} | AF={af_threshold} | "
+                f"[AF-EVOLUTION] {sample_name} | AF={af_threshold} | "
                 f"k_map={metrics['k_map']} | "
                 f"MSI%={metrics['msi_score_map']} | "
                 f"Regions={metrics['regions_with_variants']}/{metrics['total_regions']} "

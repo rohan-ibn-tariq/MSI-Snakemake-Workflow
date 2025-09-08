@@ -189,8 +189,7 @@ def main():
             json.dump(msi_data, f, indent=2)
     print(f"Quantification data saved to: {args.quantification_output}")
 
-    #TODO: ACTIVATE HTML REPORT GENERATION
-    # generate_msi_html_report(regional_results, af_evolution_results, msi_data, args.html_report)
+    generate_msi_html_report(af_evolution_results, msi_data, args.html_report, args.msi_high_threshold)
 
     print(f"Debug log: {args.debug_log}")
     print(f"HTML report: {args.html_report}")
