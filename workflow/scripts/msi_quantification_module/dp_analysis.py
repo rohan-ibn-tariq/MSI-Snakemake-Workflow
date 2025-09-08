@@ -8,7 +8,7 @@ Outputs:
 Provides uncertainty quantification for MSI scores, unstable regions, and variants.
 """
 
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import pysam
 
@@ -390,6 +390,7 @@ def calculate_msi_metrics_for_regions(
     uncertain_regions: int,
     unstable_threshold: float = 0.5,
     msi_high_threshold: float = 3.5,
+    af_threshold: Optional[float] = None,
 ) -> Dict:
     """
     Calculate MSI metrics based on DP distributions per region.
@@ -399,7 +400,6 @@ def calculate_msi_metrics_for_regions(
 
     # Compute per-region instability probabilities
     region_probabilities = []
-    regions_with_variants = 0
     for _, variants in regions_dict.items():
         p_zero = 1.0
         for variant in variants:
@@ -418,35 +418,28 @@ def calculate_msi_metrics_for_regions(
     else:
         distribution = [1.0]  # no regions → 0 unstable with prob 1
 
-    # Prepare MSI data per sample count
-    msi_data = {}
-    for k, prob in enumerate(distribution):
-        msi_score = (k / total_regions) * 100 if total_regions > 0 else 0.0
-        msi_data[k] = {
-            "probability": prob,
-            "msi_score": round(msi_score, 2),
-        }
+    # Prepare MSI data per sample count for AF >= 0.0 only
+    msi_data = None
+    if af_threshold == 0.0:
+        msi_data = {}
+        for k, prob in enumerate(distribution):
+            msi_score = (k / total_regions) * 100 if total_regions > 0 else 0.0
+            msi_data[k] = {
+                "probability": prob,
+                "msi_score": round(msi_score, 2),
+            }
 
     # MAP estimate
     k_map = max(range(len(distribution)), key=lambda i: distribution[i])
     msi_score_map = (k_map / total_regions) * 100 if total_regions > 0 else 0.0
 
-    # NOTE DEBUG:
-    # import heapq
-    # top_k = heapq.nlargest(5, enumerate(distribution), key=lambda x: x[1])
-    # print("[DEBUG] Top 5 k values by probability:")
-    # for k, p in top_k:
-    #     print(f"[DEBUG]   k={k}, prob={p:.6f}")
-    ####
-
-    return {
+    base_result = {
         # Counts / reporting
         "total_regions": total_regions,
         "regions_with_variants": regions_with_variants,
         "uncertain_regions": uncertain_regions,
 
         # MSI per-sample data
-        "msi_data": msi_data,
         "k_map": k_map,
         "msi_score_map": round(msi_score_map, 2),
         "msi_status_map": classify_msi_status(msi_score_map, msi_high_threshold),
@@ -457,6 +450,11 @@ def calculate_msi_metrics_for_regions(
             "msi_high_threshold": msi_high_threshold,
         },
     }
+
+    if msi_data is not None:
+        base_result["msi_data"] = msi_data
+
+    return base_result
 
 
 def filter_variants_by_af_and_sample(
@@ -559,6 +557,7 @@ def run_af_evolution_analysis(
                 # sum(len(v) for v in filtered_regions.values()), #TODO: CONFIRM REQUIRED AND RIGHT OR FILTERED REQUIRED
                 unstable_threshold,
                 msi_high_threshold,
+                af_threshold=af_threshold,
             )
 
             print(
