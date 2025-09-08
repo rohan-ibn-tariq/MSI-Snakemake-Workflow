@@ -267,108 +267,27 @@ def print_msi_summary(msi_data):
     print("=" * 60)
 
 
-def debug_dp_analysis_results(debug_file, dp_data):
-    """Debug section for DP-based MSI analysis results - TOPIC-FOCUSED structure."""
+def debug_af_evolution_results(debug_file, af_evolution_results):
+    """Debug section for AF evolution analysis results"""
     
     debug_file.write("\n" + "="*80 + "\n")
-    debug_file.write("6. DP-BASED MSI ANALYSIS RESULTS\n")
+    debug_file.write("6. AF EVOLUTION ANALYSIS RESULTS\n")
     debug_file.write("="*80 + "\n")
     
-    # UNIFIED: Handle both regional and AF evolution with same structure
-    analyses_to_process = []
-    
-    # Add regional analysis
-    regional = dp_data.get("regional_analysis", {})
-    if regional:
-        analyses_to_process.append(("REGIONAL ANALYSIS", regional))
-    
-    # Add AF evolution analyses
-    af_evolution = dp_data.get("af_evolution_results", {})
-    for sample_name, sample_data in af_evolution.items():
+    for sample_name, sample_data in af_evolution_results.items():
+        debug_file.write(f"\nSAMPLE: {sample_name}\n")
+        debug_file.write("-" * 40 + "\n")
+        
         for af_key, af_data in sorted(sample_data.items()):
-            analysis_name = f"AF EVOLUTION - {sample_name} - {af_key}"
-            analyses_to_process.append((analysis_name, af_data))
-    
-    # TOPIC-FOCUSED LOOP: Organized by metric type
-    for analysis_name, data in analyses_to_process:
-        debug_file.write(f"\n{analysis_name}:\n")
-        debug_file.write("-" * 60 + "\n")
-        
-        # === MSI SCORES & STATUS ===
-        debug_file.write("MSI SCORES & STATUS:\n")
-        prob_score = data.get('msi_score_probabilistic', 0)
-        exp_score = data.get('msi_score_expected', 0)
-        det_score = data.get('msi_score_deterministic', 0)
-        
-        # Fragility info
-        fragility_range = data.get('uncertainty_range_msi_score_probabilistic', [0, 0])
-        fragility_swing = data.get('uncertainty_swing_msi_score_probabilistic', 0)
-        
-        # Expected uncertainty
-        exp_uncertainty = data.get('uncertainty_msi_score_expected', 0)
-        exp_range = data.get('range_msi_score_expected_uncertainty', [0, 0])
-        
-        # Overall range
-        overall_range = data.get('range_msi_score_overall_uncertainty', [0, 0])
-        
-        debug_file.write(f"  Probabilistic: {prob_score:.2f}% ± fragility swing ±{fragility_swing:.3f}% [range: {fragility_range[0]:.2f}%-{fragility_range[1]:.2f}%] ({data.get('msi_status_probabilistic', 'N/A')})\n")
-        debug_file.write(f"  Expected: {exp_score:.2f}% ± {exp_uncertainty:.3f}% [range: {exp_range[0]:.2f}%-{exp_range[1]:.2f}%] ({data.get('msi_status_expected', 'N/A')})\n")
-        debug_file.write(f"  Deterministic: {det_score:.2f}% (exact) ({data.get('msi_status_deterministic', 'N/A')})\n")
-        debug_file.write(f"  Overall MSI Range: [{overall_range[0]:.2f}%, {overall_range[1]:.2f}%] (including all uncertainties)\n")
-        
-        # Methodological impact
-        msi_impact = data.get('impact_msi_score_probabilistic_vs_deterministic', 0)
-        fragile_count = data.get('fragile_regions_count', 0)
-        debug_file.write(f"  Methodological Impact: {msi_impact:.2f} percentage points (Probabilistic vs Deterministic)\n")
-        debug_file.write(f"  Fragility Analysis: {fragile_count:,} regions within ±0.05 of 0.5 threshold\n")
-        
-        # === VARIANT ANALYSIS ===
-        debug_file.write("\nVARIANT ANALYSIS:\n")
-        variants_expected = data.get('variants_expected', 0)
-        variants_deterministic = data.get('variants_deterministic', 0)
-        variants_uncertainty = data.get('uncertainty_variants_expected', 0)
-        exp_variants_range = data.get('range_variants_expected_uncertainty', [0, 0])
-        overall_variants_range = data.get('range_variants_overall_uncertainty', [0, 0])
-        variants_impact = data.get('impact_variants_expected_vs_deterministic', 0)
-        
-        debug_file.write(f"  Expected: {variants_expected:.2f} ± {variants_uncertainty:.2f} variants [range: {exp_variants_range[0]:.1f}-{exp_variants_range[1]:.1f}]\n")
-        debug_file.write(f"  Deterministic: {variants_deterministic:,} variants (exact)\n")
-        debug_file.write(f"  Overall Variants Range: [{overall_variants_range[0]:.1f}, {overall_variants_range[1]:.1f}] (including uncertainties)\n")
-        debug_file.write(f"  Methodological Impact: {variants_impact:.2f} variants difference (Expected vs Deterministic)\n")
-        
-        # === UNSTABLE REGIONS ANALYSIS ===
-        debug_file.write("\nUNSTABLE REGIONS ANALYSIS:\n")
-        prob_unstable = data.get('regions_unstable_probabilistic', 0)
-        exp_unstable = data.get('regions_unstable_expected', 0)
-        det_unstable = data.get('regions_unstable_deterministic', 0)
-        
-        unstable_exp_uncertainty = data.get('uncertainty_unstable_expected', 0)
-        exp_unstable_range = data.get('range_unstable_expected_uncertainty', [0, 0])
-        prob_unstable_range = data.get('range_unstable_probabilistic_fragility', [0, 0])
-        overall_unstable_range = data.get('range_unstable_overall_uncertainty', [0, 0])
-        unstable_impact = data.get('impact_unstable_expected_vs_deterministic', 0)
-        
-        debug_file.write(f"  Probabilistic: {prob_unstable:,} regions ± fragility swing ±{fragile_count:,} regions [range: {prob_unstable_range[0]:,}-{prob_unstable_range[1]:,}]\n")
-        debug_file.write(f"  Expected: {exp_unstable:.2f} ± {unstable_exp_uncertainty:.2f} regions [range: {exp_unstable_range[0]:.1f}-{exp_unstable_range[1]:.1f}]\n")
-        debug_file.write(f"  Deterministic: {det_unstable:,} regions (exact)\n")
-        debug_file.write(f"  Overall Unstable Range: [{overall_unstable_range[0]:.0f}, {overall_unstable_range[1]:.0f}] (including all uncertainties)\n")
-        debug_file.write(f"  Methodological Impact: {unstable_impact:.1f} regions difference (Expected vs Deterministic)\n")
-        
-        # === REGION BREAKDOWN ===
-        debug_file.write("\nREGION BREAKDOWN:\n")
-        total_regions = data.get('total_regions', 0)
-        regions_with_variants = data.get('regions_with_variants', 0)
-        uncertain_regions = data.get('uncertain_regions', 0)
-        prob_stable = data.get('regions_stable_probabilistic', 0)
-        det_stable = data.get('regions_stable_deterministic', 0)
-        
-        debug_file.write(f"  Total regions: {total_regions:,}\n")
-        debug_file.write(f"  Regions with variants: {regions_with_variants:,}\n")
-        debug_file.write(f"  Uncertain regions: {uncertain_regions:,}\n")
-        debug_file.write(f"  Stable regions (Probabilistic): {prob_stable:,}\n")
-        debug_file.write(f"  Stable regions (Deterministic): {det_stable:,}\n")
-        
-        debug_file.write("\n")
+            if af_key.startswith("af_"):
+                af_threshold = af_key.split("_")[1]
+                debug_file.write(f"  AF Threshold {af_threshold}:\n")
+                debug_file.write(f"    MSI Score: {af_data.get('msi_score_map', 0):.2f}%\n")
+                debug_file.write(f"    K MAP: {af_data.get('k_map', 0)}\n")
+                debug_file.write(f"    Regions with variants: {af_data.get('regions_with_variants', 0)}\n")
+                debug_file.write(f"    Uncertain regions: {af_data.get('uncertain_regions', 0)}\n")
+                debug_file.write(f"    MSI Status: {af_data.get('msi_status_map', 'N/A')}\n")
+                debug_file.write("\n")
 
 
 def write_complete_debug_log(
@@ -381,7 +300,7 @@ def write_complete_debug_log(
     filter_stats,
     unprocessed_count,
     merged_count,
-    dp_results=None,
+    af_evolution_results=None,
 ):
     """Master debug function - handles header and all debug sections"""
 
@@ -557,6 +476,6 @@ def write_complete_debug_log(
         debug_numerical_reconciliation(debug_file, reconciliation_data)
         debug_msi_analysis_results(debug_file, msi_analysis_data)
         debug_quantification_summary(debug_file, quantification_data)
-        if dp_results:
-            debug_dp_analysis_results(debug_file, dp_results)
+        if af_evolution_results:
+            debug_af_evolution_results(debug_file, af_evolution_results)
 

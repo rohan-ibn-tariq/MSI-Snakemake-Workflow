@@ -156,9 +156,6 @@ def main():
     else:
         print("Cannot run regional DP - data preparation failed")
 
-    #TODO: Implement debug AF filtering discrepancy
-    # debug_af_filtering_discrepancy(dp_result, total_ms_regions)
-
     output_data = {
         "analysis_info": {
             "timestamp": datetime.now().isoformat(),
@@ -176,21 +173,18 @@ def main():
 
     print(f"MSI analysis complete! Results saved to {args.output}")
 
-    #TODO:ACTIVATE DEBUG LOGGING
-    # write_complete_debug_log(
-    #     args.debug_log,
-    #     variants,
-    #     regions,
-    #     results,
-    #     total_regions_loaded,
-    #     args,
-    #     filter_stats,
-    #     unprocessed_count,
-    #     merged_count,
-    #     {"regional_analysis": regional_results,
-    #     "af_evolution_results": af_evolution_results,
-    #     },
-    # )
+    write_complete_debug_log(
+        args.debug_log,
+        variants,
+        regions,
+        results,
+        total_regions_loaded,
+        args,
+        filter_stats,
+        unprocessed_count,
+        merged_count,
+        af_evolution_results,
+    )
 
     msi_data = create_msi_quantification(results)
 
