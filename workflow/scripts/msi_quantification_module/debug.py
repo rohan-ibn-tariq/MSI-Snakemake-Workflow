@@ -20,7 +20,12 @@ def initialize_debug_log(debug_file_path, args):
         debug_file.write(f"Output JSON: {args.output}\n")
         debug_file.write(f"Debug log: {args.debug_log}\n")
         debug_file.write(f"HTML report: {args.html_report}\n")
+        if hasattr(args, 'msi_probability_tsv') and args.msi_probability_tsv:
+            debug_file.write(f"MSI Probability TSV: {args.msi_probability_tsv}\n")
+        if hasattr(args, 'af_evolution_tsv') and args.af_evolution_tsv:
+            debug_file.write(f"AF Evolution TSV: {args.af_evolution_tsv}\n")
         debug_file.write(f"Threads: {args.threads}\n")
+        debug_file.write(f"MSI High Threshold: {args.msi_high_threshold}\n")
         debug_file.write("=" * 80 + "\n\n")
 
 

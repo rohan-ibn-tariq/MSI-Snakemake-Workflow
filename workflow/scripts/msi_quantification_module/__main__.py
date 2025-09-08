@@ -197,9 +197,11 @@ def main():
 
     if args.msi_probability_tsv:
         generate_msi_probability_tsv(af_evolution_results, args.msi_probability_tsv)
+        print(f"MSI Probability TSV: {args.msi_probability_tsv}")
 
     if args.af_evolution_tsv:
         generate_af_evolution_tsv(af_evolution_results, args.af_evolution_tsv)
+        print(f"AF Evolution TSV: {args.af_evolution_tsv}")
 
     print(f"Debug log: {args.debug_log}")
     print(f"HTML report: {args.html_report}")
