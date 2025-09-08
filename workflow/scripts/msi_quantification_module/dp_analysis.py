@@ -2,15 +2,26 @@
 MSI Quantification Module - Dynamic Programming Analysis
 
 Implements probabilistic MSI analysis using dynamic programming approach.
+Calculates MSI probability distributions and uncertainty quantification across AF thresholds.
+
 Outputs:
-1. Genome Wide Regional MSI Analysis
-2. Sample Clustered Genome-Wide AF Evolution Analysis
-Provides uncertainty quantification for MSI scores, unstable regions, and variants.
+1. AF Evolution Analysis: MSI scores across allele frequency thresholds per sample
+2. MSI Probability Distributions: Complete probability tables for AF 0.0
+3. MAP-based Uncertainty: Statistical confidence intervals around MSI estimates
+
+Features:
+- Trusts upstream AF validation (0.0-1.0 range)
+- Missing data handling (-1 for null AF values)  
+- MAP-centered uncertainty calculation
+- Memory-efficient lazy evaluation for large datasets
+
+TODO: Consider upstream DP integration for single-pass processing
 """
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 
 import pysam
+
 
 #####################################################################################
 ################## DATA QUALITY VALIDATION & IMPUTATION FUNCTIONS ###################
@@ -18,14 +29,13 @@ import pysam
 
 def validate_af_value(af_value: Union[float, int, str, None]) -> Union[float, int]:
     """
-    Validate and normalize AF value.
-    Trusts upstream validation for range and type checking.
+    Normalize AF value with upstream validation trust.
 
     Args:
-        af_value: Allele frequency value from VCF (float, int, str, or None)
+        af_value: AF value from VCF (any type or None)
 
     Returns:
-        float (0.0-1.0) or -1 (missing)
+        float (0.0-1.0) for valid values, -1 for missing/null
     """
     if af_value is None:
         return -1
@@ -34,62 +44,84 @@ def validate_af_value(af_value: Union[float, int, str, None]) -> Union[float, in
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+# def process_variant_probabilities_and_af(variant: Dict) -> None:
+#     """
+#     Process variant probabilities and allele frequencies for DP analysis.
+#     Creates dp_data with consolidated probabilities and validated AF values.
+
+#     Side Effects:
+#         - Adds variant["dp_data"] field with results
+#         - Validates and normalizes all AF values with error tracking
+#         - Creates detailed trail for reproducibility
+    
+#     Note: Variants with missing probabilities are filtered out by core analysis.
+#     """
+
+#     pp = variant.get("prob_present")
+#     pa = variant.get("prob_absent")
+#     art = variant.get("prob_artifact")
+
+#     p_present = pp
+#     p_absent = pa + art
+
+#     audit_trail = {
+#         "af_processing": {
+#             "missing_af_samples": [],
+#             "af_conversion": {},
+#             "af_errors": [],
+#         },
+#     }
+
+#     # Process AF values for each sample with validation and audit tracking
+#     sample_afs = variant.get("sample_afs", {})
+#     af_by_sample = {}
+
+#     for sample_name, af_value in sample_afs.items():
+#         normalized_af = validate_af_value(af_value)
+#         af_by_sample[sample_name] = normalized_af
+
+#         if normalized_af == -1:
+#             audit_trail["af_processing"]["missing_af_samples"].append(sample_name)
+#             if af_value is None:
+#                 audit_trail["af_processing"]["af_conversion"][
+#                     sample_name
+#                 ] = "None -> -1"
+#             else:
+#                 audit_trail["af_processing"]["af_conversion"][
+#                     sample_name
+#                 ] = f"{af_value} -> -1 (error)"
+#         else:
+#             audit_trail["af_processing"]["af_conversion"][
+#                 sample_name
+#             ] = f"{af_value} -> {normalized_af}"
+
+#     variant["dp_data"] = {
+#         "p_present": p_present,
+#         "p_absent": p_absent,
+#         "af_by_sample": af_by_sample,
+#         "audit_trail": audit_trail,
+#     }
+
+#TODO: Remove audit trail version after complete testing.
 def process_variant_probabilities_and_af(variant: Dict) -> None:
     """
-    Process variant probabilities and allele frequencies for DP analysis.
-    Creates dp_data with consolidated probabilities and validated AF values.
-
-    Side Effects:
-        - Adds variant["dp_data"] field with results
-        - Validates and normalizes all AF values with error tracking
-        - Creates detailed trail for reproducibility
+    Process variant probabilities and AF values for DP analysis.
     
-    Note: Variants with missing probabilities are filtered out by core analysis.
+    Side Effects:
+        - Adds variant["dp_data"] field with DP-ready probabilities and normalized AF values
     """
-
     pp = variant.get("prob_present")
-    pa = variant.get("prob_absent")
+    pa = variant.get("prob_absent") 
     art = variant.get("prob_artifact")
 
-    p_present = pp
-    p_absent = pa + art
-
-    audit_trail = {
-        "af_processing": {
-            "missing_af_samples": [],
-            "af_conversion": {},
-            "af_errors": [],
-        },
-    }
-
-    # Process AF values for each sample with validation and audit tracking
-    sample_afs = variant.get("sample_afs", {})
     af_by_sample = {}
-
-    for sample_name, af_value in sample_afs.items():
-        normalized_af = validate_af_value(af_value)
-        af_by_sample[sample_name] = normalized_af
-
-        if normalized_af == -1:
-            audit_trail["af_processing"]["missing_af_samples"].append(sample_name)
-            if af_value is None:
-                audit_trail["af_processing"]["af_conversion"][
-                    sample_name
-                ] = "None -> -1"
-            else:
-                audit_trail["af_processing"]["af_conversion"][
-                    sample_name
-                ] = f"{af_value} -> -1 (error)"
-        else:
-            audit_trail["af_processing"]["af_conversion"][
-                sample_name
-            ] = f"{af_value} -> {normalized_af}"
+    for sample_name, af_value in variant.get("sample_afs", {}).items():
+        af_by_sample[sample_name] = validate_af_value(af_value)
 
     variant["dp_data"] = {
-        "p_present": p_present,
-        "p_absent": p_absent,
+        "p_present": pp,
+        "p_absent": pa + art,
         "af_by_sample": af_by_sample,
-        "audit_trail": audit_trail,
     }
 
 
