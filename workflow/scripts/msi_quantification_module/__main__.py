@@ -96,12 +96,6 @@ def parse_args():
         help="Number of threads for parallel processing",
     )
     parser.add_argument(
-        "--unstable-threshold",
-        type=float,
-        default=0.5,
-        help="P(≥1 MSI) threshold for calling region unstable (default: 0.5)"
-    )
-    parser.add_argument(
         "--msi-high-threshold", 
         type=float,
         default=3.5,
@@ -156,7 +150,6 @@ def main():
         af_evolution_results = run_af_evolution_analysis(
             dp_result,
             total_ms_regions,
-            unstable_threshold=args.unstable_threshold,
             msi_high_threshold=args.msi_high_threshold,
         )
 

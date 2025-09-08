@@ -371,7 +371,6 @@ def calculate_msi_metrics_for_regions(
     regions_dict: Dict[str, List],
     total_regions: int,
     uncertain_regions: int,
-    unstable_threshold: float = 0.5,
     msi_high_threshold: float = 3.5,
     af_threshold: Optional[float] = None,
 ) -> Dict:
@@ -429,7 +428,6 @@ def calculate_msi_metrics_for_regions(
 
         # Analysis parameters
         "analysis_parameters": {
-            "unstable_threshold": unstable_threshold,
             "msi_high_threshold": msi_high_threshold,
         },
     }
@@ -485,7 +483,6 @@ def filter_variants_by_af_and_sample(
 def run_af_evolution_analysis(
     dp_ready_data: Dict,
     total_ms_regions: int,
-    unstable_threshold: float = 0.5,
     msi_high_threshold: float = 3.5,
 ) -> Dict:
     """
@@ -538,7 +535,6 @@ def run_af_evolution_analysis(
                 uncertain_regions,
                 #total_variants,
                 # sum(len(v) for v in filtered_regions.values()), #TODO: CONFIRM REQUIRED AND RIGHT OR FILTERED REQUIRED
-                unstable_threshold,
                 msi_high_threshold,
                 af_threshold=af_threshold,
             )
