@@ -23,7 +23,12 @@ from msi_quantification_module.dp_analysis import (
     prepare_variants_for_dp,
     run_af_evolution_analysis,
 )
-from msi_quantification_module.reports import generate_msi_html_report
+from msi_quantification_module.reports import (
+    generate_msi_html_report, 
+    generate_msi_probability_tsv, 
+    generate_af_evolution_tsv,
+)
+
 
 def validate_file(filepath, file_type=None):
     """
@@ -101,6 +106,18 @@ def parse_args():
         type=float,
         default=3.5,
         help="MSI score threshold for MSI-High classification (default: 3.5 - MSIsensor standard)"
+    )
+    parser.add_argument(
+        "--msi-probability-tsv",
+        type=str,
+        default=None,
+        help="Output TSV file for MSI probability distribution (k, MSI score, probability)"
+    )
+    parser.add_argument(
+        "--af-evolution-tsv", 
+        type=str,
+        default=None,
+        help="Output TSV file for AF evolution summary across thresholds"
     )
 
     return parser.parse_args()
@@ -190,6 +207,12 @@ def main():
     print(f"Quantification data saved to: {args.quantification_output}")
 
     generate_msi_html_report(af_evolution_results, msi_data, args.html_report, args.msi_high_threshold)
+
+    if args.msi_probability_tsv:
+        generate_msi_probability_tsv(af_evolution_results, args.msi_probability_tsv)
+
+    if args.af_evolution_tsv:
+        generate_af_evolution_tsv(af_evolution_results, args.af_evolution_tsv)
 
     print(f"Debug log: {args.debug_log}")
     print(f"HTML report: {args.html_report}")

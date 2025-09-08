@@ -626,3 +626,52 @@ def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
     )
     
     return combined_chart
+
+
+def generate_msi_probability_tsv(af_evolution_results, output_path):
+    """Generate TSV file with MSI probability distribution from AF 0.0 data"""
+    
+    if not af_evolution_results:
+        print(f"[MSI-ANALYSIS] No AF evolution data - skipping MSI probability TSV")
+        return
+    
+    sample_name = next(iter(af_evolution_results.keys()), None)
+    if not sample_name:
+        print(f"[MSI-ANALYSIS] No samples found - skipping MSI probability TSV")
+        return
+    
+    sample_data = af_evolution_results[sample_name]
+    af_0_data = sample_data.get("af_0.0", {})
+    msi_data = af_0_data.get("msi_data", {})
+    
+    if not msi_data:
+        print(f"[MSI-ANALYSIS] No MSI probability data for AF 0.0 - skipping TSV")
+        return
+    
+    with open(output_path, 'w') as f:
+        f.write("k\tmsi_score\tprobability\n")
+        for k, data in sorted(msi_data.items(), key=lambda x: int(x[0])):
+            f.write(f"{k}\t{data['msi_score']}\t{data['probability']}\n")
+    
+    print(f"[MSI-ANALYSIS] MSI probability TSV saved to: {output_path}")
+
+
+def generate_af_evolution_tsv(af_evolution_results, output_path):
+    """Generate TSV file with AF evolution summary across all thresholds"""
+    
+    if not af_evolution_results:
+        print(f"[MSI-ANALYSIS] No AF evolution data - skipping AF evolution TSV")
+        return
+    
+    with open(output_path, 'w') as f:
+        f.write("sample\taf_threshold\tmsi_score_map\tk_map\tregions_with_variants\tuncertain_regions\tmsi_status\n")
+        
+        for sample_name, sample_data in af_evolution_results.items():
+            for af_key, af_data in sorted(sample_data.items()):
+                if af_key.startswith("af_"):
+                    af_threshold = af_key.split("_")[1]
+                    f.write(f"{sample_name}\t{af_threshold}\t{af_data.get('msi_score_map', 0)}\t"
+                           f"{af_data.get('k_map', 0)}\t{af_data.get('regions_with_variants', 0)}\t"
+                           f"{af_data.get('uncertain_regions', 0)}\t{af_data.get('msi_status_map', 'N/A')}\n")
+    
+    print(f"[MSI-ANALYSIS] AF evolution TSV saved to: {output_path}")
