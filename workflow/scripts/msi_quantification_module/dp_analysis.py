@@ -415,6 +415,15 @@ def calculate_msi_metrics_for_regions(
     k_map = max(range(len(distribution)), key=lambda i: distribution[i])
     msi_score_map = (k_map / total_regions) * 100 if total_regions > 0 else 0.0
 
+    # MAP-based uncertainty
+    map_variance = sum((k - k_map)**2 * prob for k, prob in enumerate(distribution))
+    map_std = (map_variance ** 0.5)
+
+    # Convert to MSI score uncertainty range
+    uncertainty_msi_lower = max(0, (k_map - map_std) / total_regions * 100)
+    uncertainty_msi_upper = min(100, (k_map + map_std) / total_regions * 100)
+    uncertainty_range = [uncertainty_msi_lower, uncertainty_msi_upper]
+
     base_result = {
         # Counts / reporting
         "total_regions": total_regions,
@@ -425,6 +434,8 @@ def calculate_msi_metrics_for_regions(
         "k_map": k_map,
         "msi_score_map": round(msi_score_map, 2),
         "msi_status_map": classify_msi_status(msi_score_map, msi_high_threshold),
+        "uncertainty_range": uncertainty_range,
+        "map_std_dev": round(map_std, 3),
 
         # Analysis parameters
         "analysis_parameters": {

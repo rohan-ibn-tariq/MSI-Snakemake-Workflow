@@ -584,10 +584,13 @@ def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
                 af_threshold = float(af_key.split("_")[1])
                 msi_score = af_data.get("msi_score_map", 0)
                 uncertain_regions = af_data.get("uncertain_regions", 0)
-                
+                uncertainty_range = af_data.get("uncertainty_range", [msi_score, msi_score])
+
                 chart_data.append({
                     "AF_Threshold": af_threshold,
                     "MSI_Score": msi_score,
+                    "Lower_Uncertainty": uncertainty_range[0],
+                    "Upper_Uncertainty": uncertainty_range[1],
                     "Uncertain_Regions": uncertain_regions
                 })
             except (ValueError, IndexError):
@@ -596,6 +599,22 @@ def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
     if not chart_data:
         return create_empty_chart("No valid AF threshold data", 400, 300, "MSI Evolution")
     
+    # MSI MAP Uncertainty band 
+    uncertainty_band = (
+        alt.Chart(pl.DataFrame(chart_data))
+        .mark_area(opacity=0.3, color="#daa520", stroke="#daa520", strokeWidth=3)
+        .encode(
+            x=alt.X("AF_Threshold:Q", title="AF Threshold"),
+            y=alt.Y("Lower_Uncertainty:Q", title="MSI Score (%)"),
+            y2=alt.Y2("Upper_Uncertainty:Q"),
+            tooltip=[
+                alt.Tooltip("AF_Threshold:Q", title="AF Threshold"),
+                alt.Tooltip("Lower_Uncertainty:Q", title="Lower Bound (%)", format=".2f"),
+                alt.Tooltip("Upper_Uncertainty:Q", title="Upper Bound (%)", format=".2f")
+            ]
+        )
+    )
+
     # MSI score line chart
     line_chart = (
         alt.Chart(pl.DataFrame(chart_data))
@@ -606,6 +625,8 @@ def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
             tooltip=[
                 alt.Tooltip("AF_Threshold:Q", title="AF Threshold"),
                 alt.Tooltip("MSI_Score:Q", title="MSI Score (%)", format=".2f"),
+                alt.Tooltip("Lower_Uncertainty:Q", title="CI Lower (%)", format=".3f"),
+                alt.Tooltip("Upper_Uncertainty:Q", title="CI Upper (%)", format=".3f"),
                 alt.Tooltip("Uncertain_Regions:Q", title="Uncertain Regions")
             ]
         )
@@ -621,7 +642,7 @@ def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
         )
     )
     
-    combined_chart = (line_chart + threshold_line).properties(
+    combined_chart = (uncertainty_band + line_chart + threshold_line).properties(
         width=400, height=300, title="MSI Score Evolution Across AF Thresholds"
     )
     
@@ -664,14 +685,18 @@ def generate_af_evolution_tsv(af_evolution_results, output_path):
         return
     
     with open(output_path, 'w') as f:
-        f.write("sample\taf_threshold\tmsi_score_map\tk_map\tregions_with_variants\tuncertain_regions\tmsi_status\n")
+        f.write("sample\taf_threshold\tmsi_score_map\tk_map\tregions_with_variants\tuncertain_regions\tmsi_status\tuncertainty_lower\tuncertainty_upper\tmap_std_dev\n")
         
         for sample_name, sample_data in af_evolution_results.items():
             for af_key, af_data in sorted(sample_data.items()):
                 if af_key.startswith("af_"):
                     af_threshold = af_key.split("_")[1]
+                    uncertainty_range = af_data.get("uncertainty_range", [0, 0])
+                    map_std_dev = af_data.get("map_std_dev", 0)
+
                     f.write(f"{sample_name}\t{af_threshold}\t{af_data.get('msi_score_map', 0)}\t"
                            f"{af_data.get('k_map', 0)}\t{af_data.get('regions_with_variants', 0)}\t"
-                           f"{af_data.get('uncertain_regions', 0)}\t{af_data.get('msi_status_map', 'N/A')}\n")
+                           f"{af_data.get('uncertain_regions', 0)}\t{af_data.get('msi_status_map', 'N/A')}\t"
+                           f"{uncertainty_range[0]:.3f}\t{uncertainty_range[1]:.3f}\t{map_std_dev:.3f}\n")
     
     print(f"[MSI-ANALYSIS] AF evolution TSV saved to: {output_path}")
