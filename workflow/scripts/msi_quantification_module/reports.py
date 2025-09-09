@@ -26,7 +26,7 @@ def generate_msi_html_report(
     af_distribution = create_af_distribution_chart(msi_data)
     motif_breakdown_chart = create_motif_breakdown_chart(msi_data)
 
-    msi_probability_chart = create_msi_probability_chart(af_evolution_results)
+    msi_probability_chart = create_msi_probability_chart(af_evolution_results, msi_high_threshold)
     msi_evolution_chart = create_msi_evolution_chart(af_evolution_results, msi_high_threshold)
 
 
@@ -520,7 +520,7 @@ def create_empty_chart(message, width=200, height=150, title="Chart"):
     )
 
 
-def create_msi_probability_chart(af_evolution_results):
+def create_msi_probability_chart(af_evolution_results, msi_high_threshold=3.5):
     """Create MSI score vs posterior probability chart from AF 0.0 data"""
     
     if not af_evolution_results:
@@ -550,7 +550,7 @@ def create_msi_probability_chart(af_evolution_results):
         .mark_circle(size=50, opacity=0.7, color="#8b4513")
         .encode(
             x=alt.X("MSI_Score:Q", title="MSI Score (%)"),
-            y=alt.Y("Probability:Q", title="Posterior Probability"),
+            y=alt.Y("Probability:Q", title="Posterior Probability", axis=alt.Axis(labels=False)),
             tooltip=[
                 alt.Tooltip("MSI_Score:Q", title="MSI Score (%)", format=".2f"),
                 alt.Tooltip("Probability:Q", title="Probability", format=".6f"),
@@ -560,7 +560,17 @@ def create_msi_probability_chart(af_evolution_results):
         .properties(width=400, height=300, title="MSI Score Distribution (AF 0.0)")
     )
     
-    return chart
+    threshold_line = (
+        alt.Chart(pl.DataFrame([{"threshold": msi_high_threshold}]))
+        .mark_rule(color="#d32f2f", strokeDash=[5, 5], strokeWidth=2)
+        .encode(
+            x=alt.X("threshold:Q"),
+            tooltip=alt.value(f"MSI-High Threshold: {msi_high_threshold}%")
+        )
+    )
+
+    combined_chart = (chart + threshold_line).properties(width=400, height=300, title="MSI Score Distribution (AF 0.0)")
+    return combined_chart
 
 
 def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
@@ -599,6 +609,7 @@ def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
     if not chart_data:
         return create_empty_chart("No valid AF threshold data", 400, 300, "MSI Evolution")
     
+
     # MSI MAP Uncertainty band 
     uncertainty_band = (
         alt.Chart(pl.DataFrame(chart_data))
@@ -620,7 +631,7 @@ def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
         alt.Chart(pl.DataFrame(chart_data))
         .mark_line(point=True, color="#8b4513", strokeWidth=3, interpolate="cardinal")
         .encode(
-            x=alt.X("AF_Threshold:Q", title="AF Threshold"),
+            x=alt.X("AF_Threshold:Q", title="AF Threshold", scale=alt.Scale(reverse=True)),
             y=alt.Y("MSI_Score:Q", title="MSI Score (%)", scale=alt.Scale(domain=[0, max(10, max(d["MSI_Score"] for d in chart_data) + 1)])),
             tooltip=[
                 alt.Tooltip("AF_Threshold:Q", title="AF Threshold"),
