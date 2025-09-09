@@ -11,7 +11,7 @@ Outputs:
 
 Features:
 - Trusts upstream AF validation (0.0-1.0 range)
-- Missing data handling (-1 for null AF values)  
+- Missing data handling (-1 for null AF values)
 - MAP-centered uncertainty calculation
 - Memory-efficient lazy evaluation for large datasets
 
@@ -27,6 +27,7 @@ import pysam
 ################## DATA QUALITY VALIDATION & IMPUTATION FUNCTIONS ###################
 #####################################################################################
 
+
 def validate_af_value(af_value: Union[float, int, str, None]) -> Union[float, int]:
     """
     Normalize AF value with upstream validation trust.
@@ -39,79 +40,19 @@ def validate_af_value(af_value: Union[float, int, str, None]) -> Union[float, in
     """
     if af_value is None:
         return -1
-    
+
     return float(af_value)
 
 
-# pylint: disable=too-many-locals,too-many-branches,too-many-statements
-# def process_variant_probabilities_and_af(variant: Dict) -> None:
-#     """
-#     Process variant probabilities and allele frequencies for DP analysis.
-#     Creates dp_data with consolidated probabilities and validated AF values.
-
-#     Side Effects:
-#         - Adds variant["dp_data"] field with results
-#         - Validates and normalizes all AF values with error tracking
-#         - Creates detailed trail for reproducibility
-    
-#     Note: Variants with missing probabilities are filtered out by core analysis.
-#     """
-
-#     pp = variant.get("prob_present")
-#     pa = variant.get("prob_absent")
-#     art = variant.get("prob_artifact")
-
-#     p_present = pp
-#     p_absent = pa + art
-
-#     audit_trail = {
-#         "af_processing": {
-#             "missing_af_samples": [],
-#             "af_conversion": {},
-#             "af_errors": [],
-#         },
-#     }
-
-#     # Process AF values for each sample with validation and audit tracking
-#     sample_afs = variant.get("sample_afs", {})
-#     af_by_sample = {}
-
-#     for sample_name, af_value in sample_afs.items():
-#         normalized_af = validate_af_value(af_value)
-#         af_by_sample[sample_name] = normalized_af
-
-#         if normalized_af == -1:
-#             audit_trail["af_processing"]["missing_af_samples"].append(sample_name)
-#             if af_value is None:
-#                 audit_trail["af_processing"]["af_conversion"][
-#                     sample_name
-#                 ] = "None -> -1"
-#             else:
-#                 audit_trail["af_processing"]["af_conversion"][
-#                     sample_name
-#                 ] = f"{af_value} -> -1 (error)"
-#         else:
-#             audit_trail["af_processing"]["af_conversion"][
-#                 sample_name
-#             ] = f"{af_value} -> {normalized_af}"
-
-#     variant["dp_data"] = {
-#         "p_present": p_present,
-#         "p_absent": p_absent,
-#         "af_by_sample": af_by_sample,
-#         "audit_trail": audit_trail,
-#     }
-
-#TODO: Remove audit trail version after complete testing.
 def process_variant_probabilities_and_af(variant: Dict) -> None:
     """
     Process variant probabilities and AF values for DP analysis.
-    
+
     Side Effects:
         - Adds variant["dp_data"] field with DP-ready probabilities and normalized AF values
     """
     pp = variant.get("prob_present")
-    pa = variant.get("prob_absent") 
+    pa = variant.get("prob_absent")
     art = variant.get("prob_artifact")
 
     af_by_sample = {}
@@ -129,41 +70,22 @@ def extract_af_data_for_variant(
     variant: Dict, sample_list: List[str]
 ) -> Dict[str, Union[float, int]]:
     """
-    Extract and normalize AF data for N/A variants in uncertain regions.
-
-    Used only for N/A variants during AF evolution analysis of uncertain regions.
-    Provides lightweight AF extraction without the full DP processing and audit
-    trails used for perfect variants in apply_4_step_imputation_to_variant.
+    Extract AF values for N/A variants in uncertain region analysis.
 
     Args:
-        variant (Dict): N/A variant dictionary containing sample_afs field
-        sample_list (List[str]): Complete list of sample names from VCF header
+        variant: N/A variant dictionary containing sample_afs field
+        sample_list: Complete list of sample names from VCF header
 
     Returns:
-        Dict[str, Union[float, int]]: AF values per sample where:
+        Dict mapping sample names to AF values:
             - float (0.0-1.0): Valid AF value
-            - -1: Missing/null AF (biological uncertainty)
+            - -1: Missing/null AF or sample not present in variant
 
-    Note:
-        Only called for N/A variants to count uncertain regions in AF evolution.
-
-    #TODO: Refactor to process all variants (perfect + N/A) in single loop rather
-        than separate processing. Current separation exists for time-saving
-        during development but creates code duplication.
+    TODO: Consider upstream consolidation - move all AF processing to core analysis
+          to eliminate preparation phase and reduce redundant AF validation calls.
     """
-
     sample_afs = variant.get("sample_afs", {})
-    af_by_sample = {}
-
-    for sample_name, af_value in sample_afs.items():
-        normalized_af = validate_af_value(af_value)
-        af_by_sample[sample_name] = normalized_af
-
-    for sample_name in sample_list:
-        if sample_name not in af_by_sample:
-            af_by_sample[sample_name] = -1
-
-    return af_by_sample
+    return {name: validate_af_value(sample_afs.get(name)) for name in sample_list}
 
 
 #####################################################################################
@@ -228,9 +150,8 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
                         af_data = extract_af_data_for_variant(variant, sample_list)
                         # TODO: IN REFACTORING FIX
                         sample_af = af_data[sample_name]
-                        if (
-                            (af_threshold == -1 and sample_af == -1)
-                            or (af_threshold >= 0 and sample_af >= af_threshold)
+                        if (af_threshold == -1 and sample_af == -1) or (
+                            af_threshold >= 0 and sample_af >= af_threshold
                         ):
                             region_has_variants_at_af_for_sample = True
                             break
@@ -255,9 +176,8 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
                     sample_af = af_by_sample[sample_name]
 
                     for af_threshold in af_thresholds:
-                        if (
-                            (af_threshold == -1 and sample_af == -1)
-                            or (af_threshold >= 0 and sample_af >= af_threshold)
+                        if (af_threshold == -1 and sample_af == -1) or (
+                            af_threshold >= 0 and sample_af >= af_threshold
                         ):
                             af_data_by_sample[sample_name][af_threshold][
                                 "variant_count"
@@ -303,6 +223,7 @@ def prepare_variants_for_dp(results, vcf_file_path, imputation_method="uniform")
 #####################################################################################
 ################## DYNAMIC PROGRAMMING CORE  ########################################
 #####################################################################################
+
 
 def run_msi_dp(variants_with_probabilities):
     """
@@ -399,6 +320,7 @@ def classify_msi_status(msi_score: float, msi_high_threshold: float = 3.5) -> st
 ################## DP ANALYSIS FUNCTIONS ############################################
 #####################################################################################
 
+
 def calculate_msi_metrics_for_regions(
     regions_dict: Dict[str, List],
     total_regions: int,
@@ -448,8 +370,8 @@ def calculate_msi_metrics_for_regions(
     msi_score_map = (k_map / total_regions) * 100 if total_regions > 0 else 0.0
 
     # MAP-based uncertainty
-    map_variance = sum((k - k_map)**2 * prob for k, prob in enumerate(distribution))
-    map_std = (map_variance ** 0.5)
+    map_variance = sum((k - k_map) ** 2 * prob for k, prob in enumerate(distribution))
+    map_std = map_variance**0.5
 
     # Convert to MSI score uncertainty range
     uncertainty_msi_lower = max(0, (k_map - map_std) / total_regions * 100)
@@ -461,14 +383,12 @@ def calculate_msi_metrics_for_regions(
         "total_regions": total_regions,
         "regions_with_variants": regions_with_variants,
         "uncertain_regions": uncertain_regions,
-
         # MSI per-sample data
         "k_map": k_map,
         "msi_score_map": round(msi_score_map, 2),
         "msi_status_map": classify_msi_status(msi_score_map, msi_high_threshold),
         "uncertainty_range": uncertainty_range,
         "map_std_dev": round(map_std, 3),
-
         # Analysis parameters
         "analysis_parameters": {
             "msi_high_threshold": msi_high_threshold,
@@ -504,10 +424,10 @@ def filter_variants_by_af_and_sample(
     """
     filtered_variants = []
     additional_uncertain = 0
-    
+
     variants_meeting_threshold = []
     variants_with_missing_af = []
-    
+
     for variant in variants:
         sample_af = variant["dp_data"]["af_by_sample"][sample_name]
         if sample_af >= af_threshold:
@@ -515,11 +435,11 @@ def filter_variants_by_af_and_sample(
             variants_meeting_threshold.append(variant)
         elif sample_af == -1:
             variants_with_missing_af.append(variant)
-    
+
     # If region has missing AF variants but no variants meeting threshold
     if not variants_meeting_threshold and variants_with_missing_af:
         additional_uncertain = 1
-    
+
     return filtered_variants, additional_uncertain
 
 
@@ -561,22 +481,27 @@ def run_af_evolution_analysis(
             total_additional_uncertain = 0
 
             for region_id, variants in dp_ready_data["regions"].items():
-                filtered_variants, uncertain_adjustment = filter_variants_by_af_and_sample(variants, af_threshold, sample_name)
+                filtered_variants, uncertain_adjustment = (
+                    filter_variants_by_af_and_sample(
+                        variants, af_threshold, sample_name
+                    )
+                )
                 total_additional_uncertain += uncertain_adjustment
 
                 if filtered_variants:
                     filtered_regions[region_id] = filtered_variants
 
             af_data = dp_ready_data["af_data_by_sample"][sample_name][af_threshold]
-            uncertain_regions = af_data["uncertain_regions"] + total_additional_uncertain
-            #total_variants = af_data["variant_count"]
-            
-            # Use simplified metrics calculation  
+            uncertain_regions = (
+                af_data["uncertain_regions"] + total_additional_uncertain
+            )
+            # total_variants = af_data["variant_count"]
+
             metrics = calculate_msi_metrics_for_regions(
                 filtered_regions,
                 total_ms_regions,
                 uncertain_regions,
-                #total_variants,
+                # total_variants,
                 # sum(len(v) for v in filtered_regions.values()), #TODO: CONFIRM REQUIRED AND RIGHT OR FILTERED REQUIRED
                 msi_high_threshold,
                 af_threshold=af_threshold,
