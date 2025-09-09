@@ -569,7 +569,23 @@ def create_msi_probability_chart(af_evolution_results, msi_high_threshold=3.5):
         )
     )
 
-    combined_chart = (chart + threshold_line).properties(width=400, height=300, title="MSI Score Distribution (AF 0.0)")
+    msi_text = (
+        alt.Chart(pl.DataFrame([{"threshold": msi_high_threshold}]))
+        .mark_text(
+            align="left",
+            dx=5,
+            dy=-10,
+            fontSize=12,
+            fontWeight="bold",
+            color="#d32f2f"
+        )
+        .encode(
+            x=alt.X("threshold:Q"),
+            text=alt.value("MSI")
+        )
+    )
+
+    combined_chart = (chart + threshold_line + msi_text).properties(width=400, height=300, title="MSI Score Distribution (AF 0.0)")
     return combined_chart
 
 
@@ -652,8 +668,24 @@ def create_msi_evolution_chart(af_evolution_results, msi_high_threshold=3.5):
             tooltip=alt.value(f"MSI-High Threshold: {msi_high_threshold}%")
         )
     )
+
+    msi_text = (
+        alt.Chart(pl.DataFrame([{"threshold": msi_high_threshold}]))
+        .mark_text(
+            align="left",
+            dx=5,
+            dy=-10,
+            fontSize=12,
+            fontWeight="bold",
+            color="#d32f2f"
+        )
+        .encode(
+            y=alt.Y("threshold:Q"),
+            text=alt.value("MSI")
+        )
+    )
     
-    combined_chart = (uncertainty_band + line_chart + threshold_line).properties(
+    combined_chart = (uncertainty_band + line_chart + threshold_line + msi_text).properties(
         width=400, height=300, title="MSI Score Evolution Across AF Thresholds"
     )
     
