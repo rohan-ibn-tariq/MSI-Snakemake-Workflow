@@ -12,6 +12,7 @@ dependencies:
   - pylint
   - snakemake
   - snakefmt
+  - conda
   # - mason
   # - varlociraptor
   # - curl

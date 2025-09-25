@@ -10,6 +10,6 @@ dependencies:
   - pysam
   - bcftools
   - polars
-  - scipy
-  - scikit-learn
+  # - scipy
+  # - scikit-learn
 
