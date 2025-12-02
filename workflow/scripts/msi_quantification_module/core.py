@@ -7,7 +7,7 @@ import multiprocessing
 from collections import defaultdict
 
 import pysam
-from binning import assign_bin
+from binning import assign_bin, overlapping_bins
 
 from msi_quantification_module.utils import phred_to_prob
 
@@ -203,13 +203,13 @@ def analyze_variant_in_region(variant_data, region_data):
     else:
         repeat_status = "N/A"
         uncertainty_reason = "imperfect_repeat"
-    
+
     # Check probabilities for perfect repeats
     if repeat_status == "perfect":
         pp = variant_data.get("prob_present")
-        pa = variant_data.get("prob_absent") 
+        pa = variant_data.get("prob_absent")
         art = variant_data.get("prob_artifact")
-        
+
         if pp is None or pa is None or art is None:
             repeat_status = "N/A"
             uncertainty_reason = "missing_probabilities"
@@ -436,49 +436,57 @@ def load_vcf_variants(vcf_file):
 
 
 def create_bin_tasks(regions, variants):
-    """Create list of tasks for parallel processing"""
+    """
+    Create list of tasks for parallel processing.
+    Passes aLL chromosome variants to each task.
+    """
     tasks = []
     total_regions_loaded = 0
-    unprocessed_regions = []
 
     for chrom in regions:
+        chrom_variants = variants.get(chrom, {})
+
         for bin_id in regions[chrom]:
             regions_in_bin = regions[chrom][bin_id]
             total_regions_loaded += len(regions_in_bin)
 
-            if chrom in variants and bin_id in variants[chrom]:
-                variants_in_bin = variants[chrom][bin_id]
-                tasks.append((chrom, bin_id, regions_in_bin, variants_in_bin))
-            else:
-                unprocessed_regions.extend(regions_in_bin)
+            tasks.append((chrom, bin_id, regions_in_bin, chrom_variants))
 
     print(f"[MSI-ANALYSIS INFO] Total regions loaded: {total_regions_loaded:,}")
     print(f"[MSI-ANALYSIS INFO] Created {len(tasks)} bin tasks for parallel processing")
-    print(f"[MSI-ANALYSIS INFO] Unprocessed regions: {len(unprocessed_regions):,}")
 
-    return tasks, total_regions_loaded, unprocessed_regions
+    return tasks, total_regions_loaded, []
 
 
-def process_single_bin(chrom, bin_id, regions_in_bin, variants_in_bin):
-    """Process one bin independently - core MSI intersection logic"""
+def process_single_bin(chrom, bin_id, regions_in_bin, all_variants_by_chrom):
+    """
+    Process one bin independently - core MSI intersection logic.
+    Checks ALL overlapping bins for variants.
+    """
 
     bin_results = []
 
     for region_id, region_data in regions_in_bin:
         variants_in_region = []
 
-        for variant_id, variant_data in variants_in_bin:
-            if "pos" not in variant_data:
-                print("ERROR: variant_data missing 'pos' key!")
-                print(f"ERROR: variant_data = {variant_data}")
-                continue
+        overlap_bin_ids = overlapping_bins(region_data["start"], region_data["end"])
 
-            if variant_data["chrom"] != region_data["chrom"]:
-                continue
+        for overlap_bin_id in overlap_bin_ids:
+            if overlap_bin_id in all_variants_by_chrom:
+                variants_in_bin = all_variants_by_chrom[overlap_bin_id]
 
-            analysis = analyze_variant_in_region(variant_data, region_data)
-            if analysis is not None:
-                variants_in_region.append(analysis)
+                for variant_id, variant_data in variants_in_bin:
+                    if "pos" not in variant_data:
+                        print("ERROR: variant_data missing 'pos' key!")
+                        print(f"ERROR: variant_data = {variant_data}")
+                        continue
+
+                    if variant_data["chrom"] != region_data["chrom"]:
+                        continue
+
+                    analysis = analyze_variant_in_region(variant_data, region_data)
+                    if analysis is not None:
+                        variants_in_region.append(analysis)
 
         region_summary = {
             "region_id": region_id,
@@ -525,6 +533,7 @@ def merge_bin_results(bin_results):
 def bin_based_threaded_intersection(variants, regions, n_threads):
     """
     Fast intersection using UCSC bins + threading
+    Uses overlapping_bins() to ensure all relevant variants are checked.
     """
     print(
         f"[MSI-ANALYSIS INFO] Starting multi-threaded intersection with {n_threads} threads"
