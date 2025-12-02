@@ -15,19 +15,14 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Install micromamba
-      run: |
-        curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C $HOME --strip-components=1 bin/micromamba
-        echo "$HOME" >> $GITHUB_PATH
-    
-    - name: Verify micromamba installation
-      run: micromamba --version
+      uses: mamba-org/setup-micromamba@v1
+      with:
+        environment-name: snakemake-msi-env
+        environment-file: environment/environment.yaml
+        cache-env: true
+        init-shell: bash
 
-    - name: Create environment
-      run: micromamba create -n snakemake-msi-env -f environment/environment.yaml -y
-
-    - name: Activate env and run Snakemake
-      shell: bash -el {0}
+    - name: Run Snakemake
+      shell: bash -l {0}
       run: |
-        eval "$(micromamba shell hook --shell=bash)"
-        micromamba activate snakemake-msi-env
-        snakemake --cores 2 --rerun-incomplete
+        snakemake --cores 2 --rerun-incomplete --use-conda --conda-frontend mamba
