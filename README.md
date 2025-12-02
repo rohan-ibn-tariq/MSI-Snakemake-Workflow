@@ -1,5 +1,5 @@
 # MSI-Snakemake-Workflow
-![Build Status](https://img.shields.io/github/actions/workflow/status/rohan-ibn-tariq/MSI-Snakemake-Workflow/Snakemake%20Workflow%20CI?branch=main)
+![Build Status](https://img.shields.io/github/actions/workflow/status/rohan-ibn-tariq/MSI-Snakemake-Workflow/Snakemake%20Workflow%20CI?branch=main&cacheSeconds=1)
 
 Snakemake Workflow for Tandem Repeat Finders and Microsatellites
 
