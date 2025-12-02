@@ -36,7 +36,6 @@ rule all:
         expand("workflow/resources/reference-sequence/chr{chrom}/genome.fasta.bwt", chrom=CHROMOSOMES),
         expand("results/data-preparation/repeats/chr{chrom}_pytrf_output.csv", chrom=CHROMOSOMES),
         expand("workflow/resources/annotation/chr{chrom}.gtf", chrom=CHROMOSOMES),
-        # "results/data-preparation/ms-bed/genome.bed",
         expand("results/data-preparation/ms-bed/chr{chrom}_sample_test.bed", chrom=CHROMOSOMES),
         # Simulation processing outputs
         expand("results/simulation-processing/simulated-mason-variant/chr{chrom}_sim_raw.vcf", chrom=CHROMOSOMES),
